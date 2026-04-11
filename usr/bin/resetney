@@ -65,11 +65,11 @@ fi
 # ---| WiFi-AP 1.1 |--- begin
 export GENERATE_NAME_WIFIAP=$( cat /dev/urandom | tr --delete --complement 'a-z0-9' | head --bytes=5 )
 #WIFI-AP
-WIFIAPSSID1=WIFI_WORLD_$GENERATE_NAME_WIFIAP
-WIFIAPPASS1=raspberry505
+WIFIAPSSID1=ney_wifi
+WIFIAPPASS1=neyneyney
 #WIFI-AP2
-WIFIAPSSID2=WIFI_AP2_$GENERATE_NAME_WIFIAP
-WIFIAPPASS2=raspberry505
+WIFIAPSSID2=ney_wifi_2
+WIFIAPPASS2=neyneyney
 # ---| WiFi-AP 1.1 |--- end
 
 # ---| LOCALIP_Br0 1.2 |--- begin
