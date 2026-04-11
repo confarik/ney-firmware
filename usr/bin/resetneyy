@@ -61,15 +61,6 @@ else
     CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
 [*]          channel: ${yz}@confxwho${endc}"
 fi
-SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
-REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
-SERIAL_FILE="/etc/security/${SERIALNEYPI}"
-if [[ $SERIALNEYPI !=serial_id ]] || [[ $REVISIONNEYPI !=revision_id ]] || \
-   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
-     echo -e "$CONTACT"
-     echo =================================
-     exit 1
-fi
 
 # ---| WiFi-AP 1.1 |--- begin
 export GENERATE_NAME_WIFIAP=$( cat /dev/urandom | tr --delete --complement 'a-z0-9' | head --bytes=5 )

@@ -87,15 +87,6 @@ else
     CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
 [*]          channel: ${yz}@confxwho${endc}"
 fi
-SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
-REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
-SERIAL_FILE="/etc/security/${SERIALNEYPI}"
-if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
-   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
-     echo -e "$CONTACT"
-     echo =================================
-     exit 1
-fi
 
 ROUTEAP=br0
 LSERVER=$(ifconfig $ROUTEAP | grep "inet " | awk '{print $2}' | cut -d/ -f1)
