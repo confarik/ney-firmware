@@ -219,13 +219,13 @@ fi
 
 while true; do
     # Запуск infoney с передачей выбранного языка
-    CHOICE=$(infoney | fzf --ansi --style default --pointer=">" \
+    CHOICE=$(infoney 2>/dev/null | fzf --ansi --style default --pointer=">" \
           --header="$FZF_HEADER" \
           --bind 'enter:become(echo {})' \
-          --bind='s:execute(sudo stopney -q; read -t 2 -n 1 -s)+reload(infoney)' \
-          --bind='q:execute(sudo wifiney -q qr; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+reload(infoney)' \
-          --bind='a:execute(iney -a)+reload(infoney)' \
-          --bind='o:execute(sudo cpney -q panel && sleep 1)+reload(infoney)' \
+          --bind='s:execute(sudo stopney -q; read -t 2 -n 1 -s)+reload(infoney 2>/dev/null)' \
+          --bind='q:execute(sudo wifiney -q qr; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+reload(infoney 2>/dev/null)' \
+          --bind='a:execute(iney -a)+reload(infoney 2>/dev/null)' \
+          --bind='o:execute(sudo cpney -q panel && sleep 1)+reload(infoney 2>/dev/null)' \
           --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
           --height=100% --info=inline --margin=1 --padding=1 --header-lines=1
           )
