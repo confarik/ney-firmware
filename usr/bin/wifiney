@@ -433,7 +433,6 @@ ESC: exit
               if [ "$WIFI_HIDDEN" = "true" ]; then
                 [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сохраняем текущую настройку: ${yz}скрытая сеть${endc}" || echo -e "[*] Saving current setting: ${yz}hidden network${endc}"
               else
-              else
                 [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сохраняем текущую настройку: ${gz}видимая сеть${endc}" || echo -e "[*] Saving current setting: ${gz}visible network${endc}"
               fi
             fi
