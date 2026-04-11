@@ -1,0 +1,195 @@
+#!/bin/bash
+export LASTCMD=$@
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e ========='|'$bz' SSHDNey 4.1 '$endc'|'========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+HELP="[*] Использование: sudo sshdney [опции]
+[*] Опции:
+[*]  [логин]@[IP]         - подключить SSH-клиент (TUN) (порт: 22 по умолчанию)
+[*]  [логин]@[IP]:[порт]  - подключить SSH-клиент (TUN) (где [порт] - другой порт)
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)
+================================="
+else
+HELP="[*] Usage: sudo sshdney [options]
+[*] Options:
+[*]  [login]@[IP]         - connect SSH-client (TUN) (port: 22 by default)
+[*]  [login]@[IP]:[port]  - connect SSH-client (TUN) (where [port] - another port)
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+================================="
+fi
+[ "$#" = "0" ] &&  echo "$HELP" && exit 1
+ROUTEAP=br0
+LSERVER=$(ifconfig $ROUTEAP | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+DEFIP=$(ip route | grep '^default' | cut -d ' ' -f -5 | cut -d ' ' -f 2-)
+while [ "$#" != '0' ] ; do
+case "$1" in
+  -v) VERBOSE=1 ; shift ;;
+   *) SSH_PORT=${1##*:}
+      SSH_USER_SERVER=${1%%:*}
+      [ "$SSH_USER_SERVER" = "$SSH_PORT" ] && SSH_PORT=22
+      SERVERIP=$(echo $SSH_USER_SERVER | cut -d@ -f2)
+      shift ;;
+esac
+done
+SOCKS_PORT=12347
+TMP=/tmp/${0##*/} ; mkdir -p $TMP
+SSHDNEY_LOG=$TMP/${0##*/}.log
+ssh -V 2>&1 | grep -q OpenSSH ||
+{ echo [*] You must install OpenSSH. ; exit 1 ; }
+CMD () {
+[ -n "$VERBOSE" ] && echo "+++ $@"
+"$@"
+}
+ACTIVATE () {
+sudo ip route add $SERVERIP $DEFIP
+CMD sudo touch /tmp/sshdney/sshdney-hostport 1>/dev/null 2>&1
+CMD echo -e "ssh $SSH_USER_SERVER:$SSH_PORT" > /tmp/sshdney/sshdney-hostport
+CMD ssh -o ConnectTimeout=5 -fN -D $LSERVER:$SOCKS_PORT -p $SSH_PORT $SSH_USER_SERVER || exit $?
+: >$SSHDNEY_LOG
+CMD sudo touch /tmp/sshdney/sshdney-online 1>/dev/null 2>&1
+CMD sudo mv /etc/resolv.conf /etc/resolv.conf_save 1>/dev/null 2>&1
+CMD sudo sh -c "echo nameserver 8.8.8.8 > /etc/resolv.conf" 1>/dev/null 2>&1
+#sudo ln -sf /run/resolvconf/resolv.conf /etc/resolv.conf 1>/dev/null 2>&1
+CMD sudo tunsshney --verbosity off --setup --proxy "socks5://$LSERVER:$SOCKS_PORT" --dns-addr 1.1.1.1 --dns virtual --tun ssh0 &
+}
+DEACTIVATE () {
+CMD pkill -f "ssh .*-D $LSERVER:$SOCKS_PORT"
+DELSERVERIP=$(route -n | grep -E "UGH" | awk '{print $1}')
+sudo ip route del $DELSERVERIP $DEFIP 1>/dev/null 2>&1
+sudo killall tunsshney 1>/dev/null 2>&1
+sleep 2
+sudo ln -sf /run/resolvconf/resolv.conf /etc/resolv.conf
+}
+QUIT () {
+trap - INT TERM
+DEACTIVATE 1>/dev/null 2>&1
+exit 0
+}
+UP () {
+trap QUIT INT TERM
+DEACTIVATE 1>/dev/null 2>&1
+
+sudo ip tuntap | egrep -o "wg0|wg1|tun0|tun1|tap0|tap1|ppp0|ppp1|vti0" 1>/dev/null 2>&1
+if [ "$?" != "1" ]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Пожалуйста, сначала отсоедините VPN" || echo -e "[*] ${yz}Information:${endc} Please disconnect VPN first"
+  echo =================================
+  exit 1 ;
+fi
+sudo ip tuntap | egrep -o "pr0" 1>/dev/null 2>&1
+if [ "$?" != "1" ]; then
+  sudo bash -c "sudo proxydney -s" 1>/dev/null 2>&1
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Сейчас PROXYDNEY отсоединен..." || echo -e "[*] ${yz}Information:${endc} Now PROXYDNEY disconnected..."
+  echo [*]
+  sleep 1
+fi
+sudo ip tuntap | egrep -o "ss0" 1>/dev/null 2>&1
+if [ "$?" != "1" ]; then
+  sudo bash -c "sudo ssdney -s" 1>/dev/null 2>&1
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Сейчас SSDNEY отсоединен..." || echo -e "[*] ${yz}Information:${endc} Now SSDNEY disconnected..."
+  echo [*]
+  sleep 1
+fi
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] Подключаемся к серверу по SSH $skyz(TUN)$endc......" || echo -e "[*] Connecting to the server by SSH $skyz(TUN)$endc......"
+[ -n "$VERBOSE" ] && echo =================================
+ACTIVATE
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} SSH $skyz(TUN)$endc подключен." || echo -e "[*] ${gz}Done:${endc} SSH $skyz(TUN)$endc connected."
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] Время: `date +%T` `date +%d-%m-%Y`" || echo -e "[*] Time: `date +%T` `date +%d-%m-%Y`"
+echo -e "`date +%T`  `date +%d-%m-%Y`  VALID = sshdney $LASTCMD" >> $HISTORY/sshney-h
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход - Ctrl-C." || echo -e "[*] Exit - Ctrl-C."
+}
+DOWN () {
+trap - 0 INT TERM
+echo
+DEACTIVATE
+sudo rm -rf /tmp/${0##*/} 1>/dev/null 2>&1
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} SSH $skyz(TUN)$endc отсоединен." || echo -e "[*] ${gz}Done:${endc} SSH $skyz(TUN)$endc disconnected."
+echo =================================
+exit 0
+}
+UP
+trap DOWN 0 INT TERM
+if [ -n "$VERBOSE" ] ; then
+tail -f $SSHDNEY_LOG
+else
+while true ; do sleep 10 ; done
+fi
+exit 0

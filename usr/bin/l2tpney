@@ -1,0 +1,511 @@
+#!/bin/bash
+export LASTCMD=$@
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e ========='|'$bz' L2TPNey 1.2 '$endc'|'========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+TIME=15
+HOMENEY=/home/ney
+HISTORY=/etc/history-vpn-proxy
+DEFAULT_SERVER=$(ip route | grep default | grep via | awk '{print $3}')
+# Функция для проверки, является ли строка IP-адресом или хостом
+is_ip_or_host() {
+  local check_str=$1
+  [[ -z "$check_str" ]] && return 1
+  [[ $check_str =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]] && return 0
+  [[ $check_str == *"."* && $check_str != *" "* ]] && return 0
+  return 1
+}
+stop_l2tpney() {
+  DELIP=$(route -n | grep UGH | awk '{print $1}') 1>/dev/null 2>&1
+  sudo /usr/sbin/ipsec stop 1>/dev/null 2>&1
+  sudo /etc/init.d/xl2tpd stop 1>/dev/null 2>&1
+  sudo sh -c "echo 'd l2tpney' > /var/run/xl2tpd/l2tp-control" 1>/dev/null 2>&1
+  sudo ipsec down l2tpney 1>/dev/null 2>&1
+  sudo route delete $DELIP 1>/dev/null 2>&1
+}
+case $1 in
+    manager)
+    L2TP_CONNECTED=$(sudo bash -c 'ps aux | grep "/usr/sbin/*xl2tpd" | grep -v grep || echo false')
+    if [ "$L2TP_CONNECTED" = "false" ]; then
+      [ "$LANGUAGE" = "RU" ] && L2TP_CONNECTED="не подключено" || L2TP_CONNECTED="not connected"
+    else
+      [ "$LANGUAGE" = "RU" ] && L2TP_CONNECTED="подключено" || L2TP_CONNECTED="connected"
+    fi
+    LAST_SERVERIP=$(sudo bash -c 'RESULT=$(sudo grep -A 10 "conn l2tpney" /etc/ipsec.conf 2>/dev/null | grep -P "right=" | head -1 | cut -d= -f2); if [ -z "$RESULT" ]; then echo "N/A"; else echo "$RESULT"; fi')
+    
+    if [ "$LANGUAGE" = "RU" ]; then
+      FZF_HEADER="
+[*] L2TP VPN-клиент: $L2TP_CONNECTED - $LAST_SERVERIP
+
+Enter: подключить
+n: подключить новый
+s: остановить
+c: очистить историю
+ctrl-i: импортировать историю
+ctrl-e: экспортировать историю
+ESC: выйти"
+      EXIT_MSG="Для выхода нажмите любую клавишу"
+      BORDER_LABEL="| Менеджер L2TP VPN-клиент |"
+    else
+      FZF_HEADER="
+[*] L2TP VPN-client: $L2TP_CONNECTED - $LAST_SERVERIP
+
+Enter: re-connect
+n: connect new
+s: stop
+c: clear history
+ctrl-i: import history
+ctrl-e: export history
+ESC: exit"
+      EXIT_MSG="Press any key to exit"
+      BORDER_LABEL="| L2TP VPN-client manager |"
+    fi
+    HISTORYL2TP=$(cat $HISTORY/l2tpney-h 2>/dev/null | sort -r -k2,2 | sed "s/NO VALID/$(echo -e "$rz")NO VALID$(echo -e "$endc")/g" | sed "s/  VALID/$(echo -e "$gz")  VALID$(echo -e "$endc")/g" | fzf --ansi \
+      --header="$FZF_HEADER" \
+      --bind='enter:execute(sudo $(echo {} | cut -d= -f2); echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(l2tpney -q manager)' \
+      --bind='n:execute(sudo l2tpney -q new; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(l2tpney -q manager)' \
+      --bind='s:execute-silent(sudo l2tpney -s && sleep 1)+become(l2tpney -q manager)' \
+      --bind='c:execute-silent(sudo l2tpney clear && sleep 1)+become(l2tpney -q manager)' \
+      --bind='ctrl-i:execute(sudo l2tpney -q import; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -t 2 -n 1 -s)+become(l2tpney -q manager)' \
+      --bind='ctrl-e:execute(sudo l2tpney -q export; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -t 2 -n 1 -s)+reload(l2tpney -q manager)' \
+      --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+      --height=40% --info=inline --margin=1 --padding=1)
+    if [ -z "$HISTORYL2TP" ]; then
+      if ! $QUIET_MODE; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+      fi
+      exit 1
+    fi
+    exit 0
+    ;;
+    new)
+    # Цикл для повторного ввода в случае ошибки
+    while true; do
+      if [ "$LANGUAGE" = "RU" ]; then
+        # Ввод данных сервера в одной строке
+        echo -e [*] ''$zsh'Введите данные L2TP VPN в одном из любых форматов:'$endc''
+        echo -e [*] '  IP/Host:PSK:логин:пароль'
+        echo -e [*] '  IP/Host PSK логин пароль'
+        echo -e [*] '  IP/Host|PSK|логин|пароль'
+        echo -e [*]
+        read -p "Вставьте или введите данные L2TP VPN: " server_info
+      else
+        # Ввод данных сервера в одной строке
+        echo -e [*] ''$zsh'Enter L2TP VPN data in any of the following formats:'$endc''
+        echo -e [*] '  IP/Host:PSK:login:password'
+        echo -e [*] '  IP/Host PSK login password'
+        echo -e [*] '  IP/Host|PSK|login|password'
+        echo -e [*]
+        read -p "Paste or enter L2TP VPN data: " server_info
+      fi
+        
+        # Определяем разделитель и разбиваем строку
+        if [[ "$server_info" == *":"* ]]; then
+            # Разделитель - двоеточие
+            IFS=':' read -r part1 part2 part3 part4 <<< "$server_info"
+        elif [[ "$server_info" == *"|"* ]]; then
+            # Разделитель - вертикальная черта
+            IFS='|' read -r part1 part2 part3 part4 <<< "$server_info"
+        else
+            # Предполагаем разделитель - пробел
+            read -r part1 part2 part3 part4 <<< "$server_info"
+        fi
+        
+        # Определяем, что из частей является IP/Host
+        SERVERIP=""
+        SERVERPSK=""
+        SERVERLOGIN=""
+        SERVERPASS=""
+        
+        # В L2TP у нас всегда формат IP PSK Login Pass
+        if is_ip_or_host "$part1"; then
+            # Формат: IP/Host PSK логин пароль
+            SERVERIP=$part1
+            SERVERPSK=$part2
+            SERVERLOGIN=$part3
+            SERVERPASS=$part4
+        else
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось определить IP/Host в введенной строке.${endc}" || echo -e "[*] ${rz}Error: failed to determine IP/Host in the input string.${endc}"
+            continue
+        fi
+        # Проверка наличия необходимых параметров
+        if [ -z "$SERVERIP" ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан IP/Host сервера.${endc}" || echo -e "[*] ${rz}Error: server IP/Host not specified.${endc}"
+            continue
+        fi
+        
+        if [ -z "$SERVERPSK" ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан PSK.${endc}" || echo -e "[*] ${rz}Error: PSK not specified.${endc}"
+            continue
+        fi
+        
+        if [ -z "$SERVERLOGIN" ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан логин.${endc}" || echo -e "[*] ${rz}Error: login not specified.${endc}"
+            continue
+        fi
+        
+        if [ -z "$SERVERPASS" ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан пароль.${endc}" || echo -e "[*] ${rz}Error: password not specified.${endc}"
+            continue
+        fi
+        break
+    done
+    
+    # Запускаем подключение с полученными параметрами
+    sudo l2tpney up "$SERVERIP" "$SERVERPSK" "$SERVERLOGIN" "$SERVERPASS"
+    exit $?
+    ;;
+    up|on|start)
+    if [ -z "$5" ] && [ -n "$2" ]; then
+        # Если есть только один аргумент, обрабатываем его как строку с разделителями
+        server_info="$2"
+        # Разбиваем строку на части
+        if [[ "$server_info" == *":"* ]]; then
+            # Разделитель - двоеточие
+            IFS=':' read -r part1 part2 part3 part4 <<< "$server_info"
+        elif [[ "$server_info" == *"|"* ]]; then
+            # Разделитель - вертикальная черта
+            IFS='|' read -r part1 part2 part3 part4 <<< "$server_info"
+        else
+            # Предполагаем разделитель - пробел
+            read -r part1 part2 part3 part4 <<< "$server_info"
+        fi
+
+        # В L2TP у нас всегда формат IP PSK Login Pass
+        if is_ip_or_host "$part1"; then
+            SERVERIP=$part1
+            SERVERPSK=$part2
+            SERVERLOGIN=$part3
+            SERVERPASS=$part4
+        else
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось определить IP/Host в введенной строке.${endc}" || echo -e "[*] ${rz}Error: failed to determine IP/Host in the input string.${endc}"
+            echo =================================
+            exit 1
+        fi
+    else
+        # Старый формат с четырьмя аргументами
+        SERVERIP="$2"
+        SERVERPSK="$3"
+        SERVERLOGIN="$4"
+        SERVERPASS="$5"
+    fi
+
+    # Проверка наличия необходимых параметров
+    if [ -z "$SERVERIP" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан IP/Host сервера.${endc}" || echo -e "[*] ${rz}Error: server IP/Host not specified.${endc}"
+      echo =================================
+      exit 1
+    fi
+    if [ -z "$SERVERPSK" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан PSK.${endc}" || echo -e "[*] ${rz}Error: PSK not specified.${endc}"
+      echo =================================
+      exit 1
+    fi
+    if [ -z "$SERVERLOGIN" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан логин.${endc}" || echo -e "[*] ${rz}Error: login not specified.${endc}"
+      echo =================================
+      exit 1
+    fi
+    if [ -z "$SERVERPASS" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан пароль.${endc}" || echo -e "[*] ${rz}Error: password not specified.${endc}"
+      echo =================================
+      exit 1
+    fi
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сервер IP/Host: ${zsh}$SERVERIP${endc}" || echo -e "[*] Server IP/Host: ${zsh}$SERVERIP${endc}"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] PSK: ${zsh}$SERVERPSK${endc}" || echo -e "[*] PSK: ${zsh}$SERVERPSK${endc}"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Логин: ${zsh}$SERVERLOGIN${endc}" || echo -e "[*] Login: ${zsh}$SERVERLOGIN${endc}"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль: ${zsh}$SERVERPASS${endc}" || echo -e "[*] Password: ${zsh}$SERVERPASS${endc}"
+    echo [*]
+    sudo ifconfig | egrep -o "ppp0" 1>/dev/null 2>&1
+    if [ "$?" != "1" ]; then
+      DELIP=$(route -n | grep UGH | awk '{print $1}') 1>/dev/null 2>&1
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Рестарт...${endc}" || echo -e "[*] ${yz}Restart...${endc}"
+      sudo poff sstpney 1>/dev/null 2>&1
+      sudo poff pptpney 1>/dev/null 2>&1
+      sleep 1
+      sudo /usr/sbin/ipsec stop 1>/dev/null 2>&1
+      sudo /etc/init.d/xl2tpd stop 1>/dev/null 2>&1
+      sudo sh -c "echo 'd l2tpney' > /var/run/xl2tpd/l2tp-control" 1>/dev/null 2>&1
+      sudo ipsec down l2tpney 1>/dev/null 2>&1
+      sudo route delete $DELIP 1>/dev/null 2>&1
+      sleep 3
+      sudo killall -9 pppd 1>/dev/null 2>&1
+      sleep 1
+    fi
+    sudo ifconfig vti0 1>/dev/null 2>&1
+    if [ "$?" != "1" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Рестарт...${endc}" || echo -e "[*] ${yz}Restart...${endc}"
+      sudo ikev2ney -s
+      sleep 5
+    fi
+    [ "$LANGUAGE" = "RU" ] && echo -n "[*] Подключаемся к серверу по L2TP VPN....." || echo -n "[*] Connecting to the server by L2TP VPN....."
+    
+    # Если SERVERIP - это доменное имя, преобразуем его в IP для IPsec
+    if [[ ! $SERVERIP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        SERVER_IP_RESOLVED=$(host $SERVERIP | grep 'has address' | head -1 | awk '{print $4}')
+        if [ -n "$SERVER_IP_RESOLVED" ]; then
+            SERVERIP_ORIG=$SERVERIP
+            SERVERIP=$SERVER_IP_RESOLVED
+        fi
+    fi
+    
+    IPSEC_CONF=/etc/ipsec.conf
+cat > $IPSEC_CONF <<EOF
+conn l2tpney
+  auto=add
+  keyexchange=ikev1
+  authby=secret
+  type=transport
+  left=%defaultroute
+  leftprotoport=17/1701
+  rightprotoport=17/1701
+  right=$SERVERIP
+  ike=aes256-sha2_256-modp2048,aes256-sha2_256-modp1536,aes256-sha2_256-modp1024,aes256-sha1-modp2048,aes256-sha1-modp1536,aes256-sha1-modp1024,aes256-sha1-ecp384,aes128-sha1-modp1024,aes128-sha1-ecp256,3des-sha1-modp2048,3des-sha1-modp1024!
+  esp=aes256-sha1,aes128-sha1,3des-sha1!
+EOF
+    IPSEC_SEC=/etc/ipsec.secrets
+cat > $IPSEC_SEC <<EOF
+$DEFAULT_SERVER $SERVERIP : PSK "$SERVERPSK"
+EOF
+    sudo chmod 600 $IPSEC_SEC
+    XL2TPD_CONF=/etc/xl2tpd/xl2tpd.conf
+cat > $XL2TPD_CONF <<EOF
+[lac l2tpney]
+lns = $SERVERIP
+ppp debug = yes
+pppoptfile = /etc/ppp/peers/l2tpney
+length bit = yes
+EOF
+    L2TP_CONF=/etc/ppp/peers/l2tpney
+cat > $L2TP_CONF <<EOF
+ipcp-accept-local
+ipcp-accept-remote
+require-mppe
+require-mschap-v2
+refuse-eap
+refuse-pap
+refuse-chap
+refuse-mschap
+noccp
+noauth
+debug
+mtu 1410 
+mru 1410
+persist
+defaultroute
+replacedefaultroute
+usepeerdns
+connect-delay 5000
+name $SERVERLOGIN
+password $SERVERPASS
+EOF
+    sudo chmod 600 $L2TP_CONF
+    sudo mkdir -p /var/run/xl2tpd
+    sudo touch /var/run/xl2tpd/l2tp-control
+cat > /etc/strongswan.d/charon.conf <<EOF
+charon {
+    retransmit_tries = 2
+    retransmit_timeout = 2.0
+    retransmit_base = 1.5
+}
+EOF
+    echo
+    # Удаляем существующий маршрут, если он есть
+    ip route del $SERVERIP via $DEFAULT_SERVER 2>/dev/null
+    # Добавляем новый маршрут
+    ip route add $SERVERIP via $DEFAULT_SERVER
+    sudo /usr/sbin/ipsec restart 1>/dev/null 2>&1
+    sleep 2
+    sudo /etc/init.d/xl2tpd restart 1>/dev/null 2>&1
+    sleep 1
+    sudo ipsec up l2tpney 1>/dev/null 2>&1
+    sudo sh -c "echo 'c l2tpney' > /var/run/xl2tpd/l2tp-control" 1>/dev/null 2>&1
+    i=0
+    while [ $i -lt $TIME ];
+    do
+      sleep 1
+      echo -n "."
+      i=$(( $i + 1 ))
+      result=$(ifconfig | grep -v ippp0 | grep ppp | awk '{print $1}')
+      if ! test -z "$result" ; then
+        echo
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Подключен к серверу по L2TP VPN." || echo -e "[*] ${gz}Done:${endc} Connected to the server by L2TP VPN."
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Время: `date +%T` `date +%d-%m-%Y`" || echo -e "[*] Time: `date +%T` `date +%d-%m-%Y`"
+        echo -e "`date +%T`  `date +%d-%m-%Y`  VALID = l2tpney $LASTCMD" >> $HISTORY/l2tpney-h
+        #echo [*] 'Остановить L2TP VPN-client - sudo l2tpney -s'
+        echo =================================
+        break
+      fi
+    done
+    if test -z "$result" ; then
+      sudo /etc/init.d/xl2tpd stop 1>/dev/null 2>&1
+      sudo sh -c "echo 'd l2tpney' > /var/run/xl2tpd/l2tp-control" 1>/dev/null 2>&1
+      sudo ipsec down l2tpney 1>/dev/null 2>&1
+      sudo route delete $SERVERIP 1>/dev/null 2>&1
+      sleep 1
+      sudo killall -9 pppd 1>/dev/null 2>&1
+      echo
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: не удалось подключиться к серверу по L2TP VPN.${endc}" || echo -e "[*] ${rz}Information: failed to connect to the server by L2TP VPN.${endc}"
+      echo -e "`date +%T`  `date +%d-%m-%Y`  NO VALID = l2tpney $LASTCMD" >> $HISTORY/l2tpney-h
+      echo =================================
+      exit 1
+    fi
+    shift
+    exit 1 ;;
+    -s|stop|down)
+    stop_l2tpney
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} L2TP VPN-client отсоединен." || echo -e "[*] ${gz}Done:${endc} L2TP VPN-client disconnected."
+    echo =================================
+    shift
+    exit 1 ;;
+    #enable)
+    #sudo systemctl enable l2tpney.service 1>/dev/null 2>&1
+    #echo -e [*] $gz'OK!'$endc
+    #echo -e [*] 'Autostart L2TP VPN: '$zsh''enable''$endc''
+    #echo =================================
+    #shift
+    #exit 1 ;;
+    #disable)
+    #sudo systemctl disable l2tpney.service 1>/dev/null 2>&1
+    #echo -e [*] $gz'OK!'$endc
+    #echo -e [*] 'Autostart L2TP VPN: '$zsh''disable''$endc''
+    #echo =================================
+    #shift
+    #exit 1 ;;
+    clear)
+    sudo sed -i 'd' /etc/ipsec.conf  1>/dev/null 2>&1
+    sudo sed -i 'd' /etc/ipsec.secrets 1>/dev/null 2>&1
+    sudo sed -i 'd' /etc/xl2tpd/xl2tpd.conf 1>/dev/null 2>&1
+    sudo sed -i 'd' /etc/ppp/peers/l2tpney 1>/dev/null 2>&1
+    sudo sh -c "echo > $HISTORY/l2tpney-h 1>/dev/null 2>&1"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} История очищена." || echo -e "[*] ${gz}Done:${endc} History cleared."
+    echo =================================
+    shift
+    exit 1
+    ;;
+    import)
+    if [ ! "$(ls -A $HOMENEY/l2tp-history 2>/dev/null)" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось найти файл l2tp-history.${endc}" || echo -e "[*] ${rz}Error: failed to find l2tp-history file.${endc}"
+      echo =================================
+      exit 1
+    fi
+    sudo cp $HOMENEY/l2tp-history $HISTORY/l2tpney-h 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Импорт выполнен." || echo -e "[*] ${gz}Done:${endc} Import completed."
+    echo =================================
+    shift
+    exit 1 ;;
+    export)
+    sudo cp $HISTORY/l2tpney-h $HOMENEY/l2tp-history 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Экспорт выполнен. Файл l2tp-history в домашней папке." || echo -e "[*] ${gz}Done:${endc} Export completed. File l2tp-history in home directory."
+    echo =================================
+    shift
+    exit 1 ;;
+    *)
+    if [ "$LANGUAGE" = "RU" ]; then
+cat << EOF
+[*] Использование: sudo l2tpney [опции]
+[*] Опции:
+[*]  manager                                - менеджер L2TP VPN-client
+[*]  up [IP/Host] [PSK] [логин] [пароль]    - подключить
+[*]  -s, stop, down                         - остановить
+[*]  clear                                  - очистить историю
+[*]  import                                 - импортировать историю подключений
+[*]  export                                 - экспортировать историю подключений
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)
+EOF
+    else
+cat << EOF
+[*] Usage: sudo l2tpney [options]
+[*] Options:
+[*]  manager                                - L2TP VPN-client manager
+[*]  up [IP/Host] [PSK] [LOGIN] [PASSWORD]  - connect
+[*]  -s, stop, down                         - stop
+[*]  clear                                  - clear history
+[*]  import                                 - import history connections
+[*]  export                                 - export history connections
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+EOF
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+esac

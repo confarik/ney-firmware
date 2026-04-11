@@ -1,0 +1,852 @@
+#!/bin/bash
+
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e ========='|'$bz' DNSNey 5.0 '$endc'|'=========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+case $1 in
+    manager)
+    while true; do
+      # Проверяем состояние автоматического DNS
+      [ "$LANGUAGE" = "RU" ] && AUTO_DNS_STATUS="[ВЫКЛ]" || AUTO_DNS_STATUS="[OFF]"
+      if grep -qc '#dns=' /etc/NetworkManager/NetworkManager.conf 2>/dev/null; then
+        [ "$LANGUAGE" = "RU" ] && AUTO_DNS_STATUS="[ВКЛ]" || AUTO_DNS_STATUS="[ON]"
+      fi
+      
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать
+ESC: выход
+      Настройка DNS:"
+        BORDER_LABEL="| Менеджер DNS |"
+        INTERACTIVE=" [1]  Вкл/выкл автоматический DNS - $AUTO_DNS_STATUS
+ [2]  Ввести другой DNS (IPv4)
+ [3]  Выбрать готовый DNS (Cloudflare, Google, Quad9 Secure, другие)
+ [4]  Выбрать DNS для VPN (NordVPN, ProtonVPN, ExpressVPN, другие)
+ [5]  Блек-лист DNS
+ [6]  Сбросить настройку DNS"
+      else
+        FZF_HEADER="
+enter: select
+ESC: exit
+      DNS settings:"
+        INTERACTIVE=" [1]  Enable/Disable automatic DNS - $AUTO_DNS_STATUS
+ [2]  Enter another DNS (IPv4)
+ [3]  Select a ready DNS (Cloudflare, Google, Quad9 Secure, others)
+ [4]  Select DNS for VPN (NordVPN, ProtonVPN, ExpressVPN, others)
+ [5]  Blacklist DNS
+ [6]  Reset DNS settings"
+        BORDER_LABEL="| DNS manager |"
+      fi
+
+      CHOICE=$(echo "$INTERACTIVE" | fzf --ansi --pointer=">" \
+          --header="$FZF_HEADER" \
+          --bind 'enter:become(echo {})' \
+          --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+          --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$CHOICE" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 0
+      fi
+      case "$CHOICE" in
+        *"[1]"*)
+        # Проверяем текущий статус и переключаем на противоположный
+        if grep -qc '#dns=' /etc/NetworkManager/NetworkManager.conf 2>/dev/null; then
+          # Если включено - выключаем
+          sudo dnsney -q auto-off
+        else
+          # Если выключено - включаем
+          sudo dnsney -q auto
+        fi
+        ;;              
+        *"[2]"*)
+        # Запрашиваем первый DNS-сервер (обязательный)
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Введите первый DNS (IPv4):" || echo -e "[*] Enter the first DNS (IPv4):"
+        read -p "DNS1: " DNS1
+        
+        # Проверяем, что DNS1 не пуст
+        if [ -z "$DNS1" ]; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Ошибка: первый DNS не может быть пустым${endc}" || echo -e "[*] ${yz}Error: the first DNS cannot be empty${endc}"
+          continue
+        fi
+
+        # Запрашиваем второй DNS-сервер (необязательный)
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Введите второй DNS (IPv4) или оставьте пустым:" || echo -e "[*] Enter the second DNS (IPv4) or leave empty:"
+        read -p "DNS2: " DNS2
+        
+        # Устанавливаем DNS в зависимости от того, был ли введен второй DNS
+        if [ -z "$DNS2" ]; then
+          sudo dnsney -q dns $DNS1
+        else
+          sudo dnsney -q dns $DNS1 $DNS2
+        fi
+        ;;              
+        *"[3]"*)
+        sudo dnsney -q list
+        ;;
+        *"[4]"*)
+        sudo dnsney -q vpn
+        ;;
+        *"[5]"*)
+        sudo dnsney -q black
+        ;;   
+        *"[6]"*)
+        sudo dnsney -q reinstall
+        ;;            
+        esac
+      done
+    shift
+    exit 0 ;;
+
+    auto)
+    sudo sed -i '/dns=/s/^/#/' /etc/NetworkManager/NetworkManager.conf
+    sudo sh -c "echo > /etc/resolvconf/resolv.conf.d/head"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${zsh}Авто DNS - ВКЛ.${endc} ${blink}Подождите, несколько секунд...${endc} Сетевая система перезагружается." || echo -e "[*] ${zsh}Auto DNS - ON.${endc} ${blink}Wait a few seconds...${endc} The network system is restarting."
+    sudo nmcli con show -a | grep -wc "LAN-IN" 1>/dev/null 2>&1 && sudo nmcli con mod LAN-IN ipv4.ignore-auto-dns no 1>/dev/null 2>&1
+    sudo nmcli con show -a | grep -wc "LAN-IN2" 1>/dev/null 2>&1 && sudo nmcli con mod LAN-IN ipv4.ignore-auto-dns no 1>/dev/null 2>&1
+    sudo nmcli con show -a | grep -wc "LAN-IN3" 1>/dev/null 2>&1 && sudo nmcli con mod LAN-IN ipv4.ignore-auto-dns no 1>/dev/null 2>&1
+    sudo nmcli con show -a | grep -wc "LAN-IN4" 1>/dev/null 2>&1 && sudo nmcli con mod LAN-IN ipv4.ignore-auto-dns no 1>/dev/null 2>&1
+    sudo nmcli con show -a | grep -wc "WiFi-WLAN" 1>/dev/null 2>&1 && sudo nmcli con mod WiFi-WLAN ipv4.ignore-auto-dns no 1>/dev/null 2>&1
+    sudo systemctl restart NetworkManager
+    sudo resolvconf -u
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+    echo =================================
+    shift
+    exit 1 ;;
+    auto-off)
+    sudo sed -i /etc/NetworkManager/NetworkManager.conf -e '/dns=/c dns=none'
+    sudo sh -c "echo > /etc/resolvconf/resolv.conf.d/head"
+    sudo sh -c "echo > /run/resolvconf/interface/NetworkManager"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${zsh}Авто DNS - ВЫКЛ${endc}" || echo -e "[*] ${zsh}Auto DNS - OFF${endc}"
+    #sudo sh -c "echo > /etc/resolv.conf"
+    sudo nmcli con show -a | grep -wc "LAN-IN" 1>/dev/null 2>&1 && sudo nmcli con mod LAN-IN ipv4.ignore-auto-dns yes 1>/dev/null 2>&1
+    sudo nmcli con show -a | grep -wc "LAN-IN2" 1>/dev/null 2>&1 && sudo nmcli con mod LAN-IN ipv4.ignore-auto-dns yes 1>/dev/null 2>&1
+    sudo nmcli con show -a | grep -wc "LAN-IN3" 1>/dev/null 2>&1 && sudo nmcli con mod LAN-IN ipv4.ignore-auto-dns yes 1>/dev/null 2>&1
+    sudo nmcli con show -a | grep -wc "LAN-IN4" 1>/dev/null 2>&1 && sudo nmcli con mod LAN-IN ipv4.ignore-auto-dns yes 1>/dev/null 2>&1
+    sudo nmcli con show -a | grep -wc "WiFi-WLAN" 1>/dev/null 2>&1 && sudo nmcli con mod WiFi-WLAN ipv4.ignore-auto-dns yes 1>/dev/null 2>&1
+    sudo resolvconf -u
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пустой DNS, поэтому теперь выберите DNS.${endc}" || echo -e "[*] ${yz}Empty DNS, so now select a DNS.${endc}"
+    echo =================================
+    shift
+    exit 1 ;;
+
+    dns|-d)
+    DNS1="$2" DNS2="$3"
+    if [ -n "$DNS1" ]; then
+      if [[ $DNS1 =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; then
+        if [ -n "$DNS2" ]; then
+          if [[ $DNS2 =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; then
+            sudo sh -c "echo nameserver $DNS1 > /etc/resolvconf/resolv.conf.d/head"
+            sudo sh -c "echo nameserver $DNS2 >> /etc/resolvconf/resolv.conf.d/head"
+          else
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: Вы ввели неверный второй DNS.${endc}" || echo -e "[*] ${rz}Error: You entered an invalid second DNS.${endc}"
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Каждое число должно находиться в диапазоне от 0 до 255.${endc}" || echo -e "[*] ${yz}Each number must be between 0 and 255.${endc}"
+            echo =================================
+            exit 0
+          fi
+        else
+          sudo sh -c "echo nameserver $DNS1 > /etc/resolvconf/resolv.conf.d/head"
+        fi
+        if [ -n "$DNS2" ]; then
+          echo -e -n [*] 'DNS1: '$zsh''$DNS1''$endc', DNS2: '$zsh''$DNS2''$endc''
+        else
+          echo -e -n [*] 'DNS1: '$zsh''$DNS1''$endc''
+        fi
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e ' '$gz'- Успешно!'$endc'' || echo -e ' '$gz'- Done!'$endc''
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: Вы ввели неверный DNS.${endc}" || echo -e "[*] ${rz}Error: You entered an invalid DNS.${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Каждое число должно находиться в диапазоне от 0 до 255.${endc}" || echo -e "[*] ${yz}Each number must be between 0 and 255.${endc}"
+      fi
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Ошибка: Вы не ввели DNS.${endc}" || echo -e "[*] ${yz}Error: You did not enter a DNS.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пример:${endc} sudo dnsney dns 1.1.1.1" || echo -e "[*] ${yz}Example: sudo dnsney dns 1.1.1.1"
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+
+    list)
+    while true; do
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать
+ESC: выход
+      Настройка DNS:"
+      BORDER_LABEL="| Менеджер DNS |"
+      else
+        FZF_HEADER="
+enter: select
+ESC: exit
+      DNS settings:"
+      BORDER_LABEL="| DNS manager |"
+      fi
+
+      CHOICE=$(cat << EOF | fzf --ansi --pointer=">" \
+          --header="$FZF_HEADER" \
+          --bind 'enter:become(echo {})' \
+          --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+          --height=46% --info=inline --margin=1 --padding=1
+ [1]  Cloudflare     DNS-over-UDP       (1.1.1.1, 1.0.0.1)
+ [2]  Cloudflare     DNS-over-UDP IPv6  (2606:4700:4700::1111, 2606:4700:4700::1001)
+ [3]  Google         DNS-over-UDP       (8.8.8.8, 8.8.4.4)
+ [4]  Google         DNS-over-UDP IPv6  (2001:4860:4860::8888, 2001:4860:4860::8844)
+ [5]  Quad9 Secure   DNS-over-UDP       (9.9.9.9)
+ [6]  Quad9 Secure   DNS-over-UDP IPv6  (2620:fe::fe)
+ [7]  OpenDNS        DNS-over-UDP       (208.67.222.222, 208.67.220.220)
+ [8]  OpenDNS        DNS-over-UDP IPv6  (2620:0:ccc::2, 2620:0:ccd::2)
+ [9]  Level3         DNS-over-UDP       (209.244.0.3, 209.244.0.4)
+ [10]  UltraDNS      DNS-over-UDP       (156.154.70.2, 156.154.71.2)
+ [11]  UltraDNS      DNS-over-UDP IPv6  (2610:a1:1018::2, 2610:a1:1019::2)
+ [12]  Dyn           DNS-over-UDP       (216.146.35.35, 216.146.36.36)
+ [13]  Yandex Basic  DNS-over-UDP       (77.88.8.8, 77.88.8.1)
+ [14]  Yandex Basic  DNS-over-UDP IPv6  (2a02:6b8::feed:0ff, 2a02:6b8:0:1::feed:0ff)
+ [15]  Yandex Safe   DNS-over-UDP       (77.88.8.88, 77.88.8.2)
+ [16]  Yandex Safe   DNS-over-UDP IPv6  (2a02:6b8::feed:bad, 2a02:6b8:0:1::feed:bad)
+EOF
+          )
+      if [ -z "$CHOICE" ]; then
+        if ! $QUIET_MODE; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+          echo =================================
+        fi
+        exit 0
+      fi
+      case "$CHOICE" in
+        *"[1]"*)
+        sudo sh -c "echo nameserver 1.1.1.1 > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 1.0.0.1 >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Cloudflare (DNS-over-UDP)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;              
+        *"[2]"*)
+        sudo sh -c "echo nameserver 2606:4700:4700::1111 > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 2606:4700:4700::1001 >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Cloudflare (DNS-over-UDP IPv6)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;   
+
+        *"[3]"*)
+        sudo sh -c "echo nameserver 8.8.8.8 > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 8.8.4.4 >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Google (DNS-over-UDP)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;
+        *"[4]"*)
+        sudo sh -c "echo nameserver 2001:4860:4860::8888 > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 2001:4860:4860::8844 >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Google (DNS-over-UDP IPv6)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;
+
+        *"[5]"*)
+        sudo sh -c "echo nameserver 9.9.9.9 > /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Quad9 Secure (DNS-over-UDP)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;
+        *"[6]"*)
+        sudo sh -c "echo nameserver 2620:fe::fe > /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Quad9 Secure (DNS-over-UDP IPv6)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;; 
+
+        *"[7]"*)
+        sudo sh -c "echo nameserver 208.67.222.222 > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 208.67.220.220 >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'OpenDNS (DNS-over-UDP)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;; 
+        *"[8]"*)
+        sudo sh -c "echo nameserver 2620:0:ccc::2 > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 2620:0:ccd::2 >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'OpenDNS (DNS-over-UDP IPv6)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;
+
+        *"[9]"*)
+        sudo sh -c "echo nameserver 209.244.0.3 > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 209.244.0.4 >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Level3 (DNS-over-UDP)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;
+
+        *"[10]"*)
+        sudo sh -c "echo nameserver 156.154.70.2 > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 156.154.71.2 >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Neustar UltraDNS (DNS-over-UDP)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;
+        *"[11]"*)
+        sudo sh -c "echo nameserver 2610:a1:1018::2 > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 2610:a1:1019::2 >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Neustar UltraDNS (DNS-over-UDP IPv6)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;
+
+        *"[12]"*)
+        sudo sh -c "echo nameserver 216.146.35.35 > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 216.146.36.36 >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Dyn (DNS-over-UDP)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;
+
+        *"[13]"*)
+        sudo sh -c "echo nameserver 77.88.8.8 > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 77.88.8.1 >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Yandex Basic (DNS-over-UDP)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;
+        *"[14]"*)
+        sudo sh -c "echo nameserver 2a02:6b8::feed:0ff > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 2a02:6b8:0:1::feed:0ff >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Yandex Basic (DNS-over-UDP IPv6)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;
+
+        *"[15]"*)
+        sudo sh -c "echo nameserver 77.88.8.88 > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 77.88.8.2 >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Yandex Safe (DNS-over-UDP)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;
+        *"[16]"*)
+        sudo sh -c "echo nameserver 2a02:6b8::feed:bad > /etc/resolvconf/resolv.conf.d/head"
+        sudo sh -c "echo nameserver 2a02:6b8:0:1::feed:bad >> /etc/resolvconf/resolv.conf.d/head"
+        echo -e [*] ''$zsh'Yandex Safe (DNS-over-UDP IPv6)'$endc''
+        sudo resolvconf -u
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+        echo =================================
+        ;;
+        esac
+      done
+    shift
+    exit 0 ;;
+
+    vpn)
+    while true; do
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать
+ESC: выход
+      Настройка DNS VPN:"
+      BORDER_LABEL="| Менеджер DNS |"
+      else
+        FZF_HEADER="
+enter: select
+ESC: exit
+      DNS VPN settings:"
+      BORDER_LABEL="| DNS manager |"
+      fi
+
+      CHOICE=$(cat << EOF | fzf --ansi --pointer=">" \
+          --header="$FZF_HEADER" \
+          --bind 'enter:become(echo {})' \
+          --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+          --height=45% --info=inline --margin=1 --padding=1
+ [1]  NordVPN                          DNS-over-UDP          (103.86.96.100, 103.86.99.100)
+ [2]  PIA VPN                          DNS-over-UDP          (10.0.0.241, 10.0.0.243)
+ [3]  Surfshark                        DNS-over-UDP          (162.252.172.57, 149.154.159.92)
+ [4]  IPVanish VPN,StrongVPN           DNS-over-UDP          (198.18.0.1, 198.18.0.2)
+ [5]  Mullvad VPN                      DNS-over-UDP          (100.64.0.7)
+ [6]  HideMyAss,StrongVPN              Google DNS-over-UDP   (8.8.8.8, 8.8.4.4)
+ [7]  ProtonVPN Basic/Plus/Visionary   DNS-over-UDP          (10.8.8.1)
+ [8]  ProtonVPN FREE                   DNS-over-UDP          (10.8.0.1)
+ [9]  ExpressVPN,Surfshark,StrongVPN   OpenDNS DNS-over-UDP  (208.67.222.222, 208.67.220.220)
+ [10]  HideMyAss,Windscribe            OpenDNS DNS-over-UDP  (208.67.222.222, 208.67.220.220)
+EOF
+          )
+      if [ -z "$CHOICE" ]; then
+        if ! $QUIET_MODE; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+          echo =================================
+        fi
+        exit 0
+      fi
+      case "$CHOICE" in
+            *"[1]"*)
+            sudo sh -c "echo nameserver 103.86.96.100 > /etc/resolvconf/resolv.conf.d/head"
+            sudo sh -c "echo nameserver 103.86.99.100 >> /etc/resolvconf/resolv.conf.d/head"
+            echo -e [*] ''$zsh'NordVPN (DNS-over-UDP)'$endc''
+            sudo resolvconf -u
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+            echo =================================
+            ;;
+            *"[2]"*)
+            sudo sh -c "echo nameserver 10.0.0.241 > /etc/resolvconf/resolv.conf.d/head"
+            sudo sh -c "echo nameserver 10.0.0.243 >> /etc/resolvconf/resolv.conf.d/head"
+            echo -e [*] ''$zsh'PIA VPN (DNS-over-UDP)'$endc''
+            sudo resolvconf -u
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+            echo =================================
+            ;;
+            *"[3]"*)
+            sudo sh -c "echo nameserver 162.252.172.57 > /etc/resolvconf/resolv.conf.d/head"
+            sudo sh -c "echo nameserver 149.154.159.92 >> /etc/resolvconf/resolv.conf.d/head"
+            echo -e [*] ''$zsh'Surfshark (DNS-over-UDP)'$endc''
+            sudo resolvconf -u
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+            echo =================================
+            ;;
+            *"[4]"*)
+            sudo sh -c "echo nameserver 198.18.0.1 > /etc/resolvconf/resolv.conf.d/head"
+            sudo sh -c "echo nameserver 198.18.0.2 >> /etc/resolvconf/resolv.conf.d/head"
+            echo -e [*] ''$zsh'IPVanish VPN, StrongVPN (DNS-over-UDP)'$endc''
+            sudo resolvconf -u
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+            echo =================================
+            ;;
+
+            *"[5]"*)
+            sudo sh -c "echo nameserver 100.64.0.7 > /etc/resolvconf/resolv.conf.d/head"
+            echo -e [*] ''$zsh'Mullvad VPN (DNS-over-UDP)'$endc''
+            sudo resolvconf -u
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+            echo =================================
+            ;;
+            *"[6]"*)
+            sudo sh -c "echo nameserver 8.8.8.8 > /etc/resolvconf/resolv.conf.d/head"
+            sudo sh -c "echo nameserver 8.8.4.4 >> /etc/resolvconf/resolv.conf.d/head"
+            echo -e [*] ''$zsh'HideMyAss, StrongVPN (Google DNS-over-UDP)'$endc''
+            sudo resolvconf -u
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+            echo =================================
+            ;;
+            *"[7]"*)
+            sudo sh -c "echo nameserver 10.8.8.1 > /etc/resolvconf/resolv.conf.d/head"
+            echo -e [*] ''$zsh'ProtonVPN Basic/Plus/Visionary (DNS-over-UDP)'$endc''
+            sudo resolvconf -u
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+            echo =================================
+            ;;
+            *"[8]"*)
+            sudo sh -c "echo nameserver 10.8.0.1 > /etc/resolvconf/resolv.conf.d/head"
+            echo -e [*] ''$zsh'ProtonVPN FREE (DNS-over-UDP)'$endc''
+            sudo resolvconf -u
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+            echo =================================
+            ;;
+            *"[9]"*)
+            sudo sh -c "echo nameserver 208.67.222.222 > /etc/resolvconf/resolv.conf.d/head"
+            sudo sh -c "echo nameserver 208.67.220.220 >> /etc/resolvconf/resolv.conf.d/head"
+            echo -e [*] ''$zsh'ExpressVPN, Surfshark, StrongVPN, HideMyAss, Windscribe (OpenDNS DNS-over-UDP)'$endc''
+            sudo resolvconf -u
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+            echo =================================
+            ;;
+            *"[10]"*)
+            sudo sh -c "echo nameserver 208.67.222.222 > /etc/resolvconf/resolv.conf.d/head"
+            sudo sh -c "echo nameserver 208.67.220.220 >> /etc/resolvconf/resolv.conf.d/head"
+            echo -e [*] ''$zsh'HideMyAss, Windscribe (OpenDNS DNS-over-UDP)'$endc''
+            sudo resolvconf -u
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+            echo =================================
+            ;;
+        esac
+      done
+    shift
+    exit 0 ;;
+
+    black)
+    # При запуске без параметров или с неизвестным параметром, предложим интерактивный режим
+    MODE=""
+    if [ "$2" = "list" ]; then
+      MODE="list"
+    elif [ "$2" = "del" ]; then
+      MODE="delete"
+      DNS_LIST_TYPE=$3
+      DNS_IP=$4
+    elif [ "$2" = "add" ]; then
+      MODE="add"
+      DNS_LIST_TYPE=$3
+      DNS_IP=$4
+    else
+      # Если не указано add/del/list, считаем, что это второй параметр
+      MODE="interactive"
+      DNS_LIST_TYPE=$2
+      DNS_IP=$3
+    fi
+    # Проверка наличия аргументов - если нет, показываем все черные списки или предлагаем интерактивный выбор
+    if [ -z "$DNS_LIST_TYPE" ]; then
+      # Проверяем наличие директории для хранения черных списков
+      if [ ! -d "/etc/dnsney" ]; then
+        sudo mkdir -p "/etc/dnsney" 2>/dev/null
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Создана директория для черных списков DNS." || echo -e "[*] Created directory for blacklists DNS."
+      fi
+      
+      # Если задан команда 'list' - показываем все списки
+      if [ "$MODE" = "list" ]; then
+        # Просто показываем все черные списки и их содержимое
+        for dns_num in 1 2 3 4; do
+          list_file="/etc/dnsney/black_dns${dns_num}.list"
+          if [ -f "$list_file" ] && [ -s "$list_file" ]; then
+            count=$(wc -l < "$list_file")
+            [ "$LANGUAGE" = "RU" ] && echo -e "[${dns_num}]  ${zsh}DNS${dns_num}${endc} - всего заблокировано: $count IP-адресов:"
+            [ "$LANGUAGE" = "EN" ] && echo -e "[${dns_num}]  ${zsh}DNS${dns_num}${endc} - total blocked: $count IP addresses:"
+            cat "$list_file" | while read ip; do
+              echo -e "[${dns_num}]        $ip"
+            done
+          else
+            [ "$LANGUAGE" = "RU" ] && echo -e "[${dns_num}]  ${zsh}DNS${dns_num}${endc} - нет заблокированных IP-адресов:"
+            [ "$LANGUAGE" = "EN" ] && echo -e "[${dns_num}]  ${zsh}DNS${dns_num}${endc} - no blocked IP addresses:"
+          fi
+          echo -e "[${dns_num}] "
+        done
+        exit 0
+      fi
+      
+      # Если задан режим добавления/удаления или интерактивный режим, предлагаем выбрать DNS список
+      if [ "$MODE" = "add" ] || [ "$MODE" = "delete" ] || [ "$MODE" = "interactive" ]; then
+        # Если выбран режим "interactive", предлагаем выбрать действие
+        if [ "$MODE" = "interactive" ]; then
+          if [ -z "$DNS_LIST_TYPE" ]; then
+
+            if [ "$LANGUAGE" = "RU" ]; then
+              FZF_HEADER="
+enter: добавить IP-адрес DNS
+d: удалить IP-адрес DNS
+c: удалить все DNS
+ESC: выход
+      Списки блокировок DNS:"
+              BORDER_LABEL="| Менеджер DNS |"
+            else
+              FZF_HEADER="
+enter: add IP address DNS
+d: delete IP address DNS
+c: delete all DNS
+ESC: exit
+      DNS blacklists:"
+              BORDER_LABEL="| DNS manager |"
+            fi
+            BLACKLISTDNS=$(sudo dnsney -q black list 2>/dev/null | fzf --ansi --style default --pointer=">" \
+              --header="$FZF_HEADER" \
+              --bind='enter:execute(DNSNUM=$(echo {} | cut -d" " -f1 | tr -d '[]'); sudo dnsney -q black add dns$DNSNUM && sleep 1)+reload(sudo dnsney -q black list)' \
+              --bind='d:execute-silent(DNSNUM=$(echo {} | cut -d" " -f1 | tr -d '[]') && DNSIP=$(echo {} | cut -d" " -f9); sudo dnsney -q black del dns$DNSNUM $DNSIP && sleep 1)+reload(sudo dnsney -q black list)' \
+              --bind='c:execute-silent(cat /dev/null > /etc/dnsney/black_dns1.list && cat /dev/null > /etc/dnsney/black_dns2.list && cat /dev/null > /etc/dnsney/black_dns3.list && cat /dev/null > /etc/dnsney/black_dns4.list && sleep 1)+reload(sudo dnsney -q black list)' \
+              --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+              --height=60% --info=inline --margin=1 --padding=1)
+            if [ -z "$BLACKLISTDNS" ]; then
+              if ! $QUIET_MODE; then
+                [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+                echo =================================
+              fi
+              exit 1
+            fi
+            exit 1
+          fi
+        fi
+
+        if [ "$LANGUAGE" = "RU" ]; then
+          FZF_HEADER="
+enter: выбрать
+ESC: выход
+      Список DNS:"
+          BORDER_LABEL="| Менеджер DNS |"
+        else
+          FZF_HEADER="
+enter: select
+ESC: exit
+      DNS list number:"
+          BORDER_LABEL="| DNS manager |"
+        fi
+
+        DNS_TYPE_CHOICE=$(cat << EOF | fzf --ansi --pointer=">" \
+          --header="$FZF_HEADER" \
+          --bind 'enter:become(echo {})' \
+          --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+          --height=30% --info=inline --margin=1 --padding=1
+ [1]  DNS1
+ [2]  DNS2
+ [3]  DNS3
+ [4]  DNS4
+EOF
+          )
+        if [ -z "$DNS_TYPE_CHOICE" ]; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+          echo =================================
+          exit 0
+        fi
+
+        case "$DNS_TYPE_CHOICE" in
+          *"[1]"*)  
+            DNS_LIST_TYPE="dns1"
+            ;;
+          *"[2]"*)
+            DNS_LIST_TYPE="dns2"
+            ;;
+          *"[3]"*)
+            DNS_LIST_TYPE="dns3"
+            ;;
+          *"[4]"*)
+            DNS_LIST_TYPE="dns4"
+            ;;
+        esac
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выбран список: ${zsh}$DNS_LIST_TYPE${endc}" || echo -e "[*] Selected list: ${zsh}$DNS_LIST_TYPE${endc}"
+      else
+        # Просто показываем все черные списки и их содержимое
+        for dns_num in 1 2 3 4; do
+          list_file="/etc/dnsney/black_dns${dns_num}.list"
+          if [ -f "$list_file" ] && [ -s "$list_file" ]; then
+            count=$(wc -l < "$list_file")
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${uline}Всего заблокировано: $count IP-адресов ${zsh}DNS${dns_num}${endc}${endc}"
+            [ "$LANGUAGE" = "EN" ] && echo -e "[*] ${uline}Total blocked: $count IP addresses ${zsh}DNS${dns_num}${endc}${endc}"
+            cat "$list_file" | while read ip; do
+              echo -e "[*]   $ip"
+            done
+          else
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${uline}Нет заблокированных IP-адресов ${zsh}DNS${dns_num}${endc}${endc}"
+            [ "$LANGUAGE" = "EN" ] && echo -e "[*] ${uline}No blocked IP addresses ${zsh}DNS${dns_num}${endc}${endc}"
+          fi
+          echo -e "[*] "
+        done
+        echo =================================
+        exit 0
+      fi
+    fi
+    # Если указан DNS_LIST_TYPE, но не указан DNS-адрес
+    if [ -z "$DNS_IP" ]; then
+      # Интерактивный режим, запрашиваем IP-адрес DNS у пользователя
+
+      # Функция для проверки валидности IP-адреса DNS
+      check_ip_valid() {
+        local IP=$1
+        # Проверка на соответствие формату IPv4 или IPv6
+        if [[ $IP =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]] || [[ $IP =~ ^([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}$ ]] || [[ $IP =~ ^([0-9a-fA-F]{1,4}:){1,7}:$ ]] || [[ $IP =~ ^([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}$ ]] || [[ $IP =~ ^([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}$ ]] || [[ $IP =~ ^([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}$ ]] || [[ $IP =~ ^([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}$ ]] || [[ $IP =~ ^([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}$ ]] || [[ $IP =~ ^[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})$ ]] || [[ $IP =~ ^:((:[0-9a-fA-F]{1,4}){1,7}|:)$ ]]; then
+          echo "valid"
+          return 0
+        else
+          echo "invalid"
+          return 1
+        fi
+      }
+      
+      # Цикл для запроса IP до получения корректного значения
+      VALID_IP=false
+      while [ "$VALID_IP" != "true" ]; do
+        if [ "$MODE" = "add" ]; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Введите IP-адрес DNS для добавления в черный список $DNS_LIST_TYPE" || echo -e "[*] Enter the IP address DNS to add to the black list $DNS_LIST_TYPE"
+        else
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Введите IP-адрес DNS для удаления из черного списка $DNS_LIST_TYPE" || echo -e "[*] Enter the IP address DNS to remove from the black list $DNS_LIST_TYPE"
+        fi
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*]   или оставьте пустым для выхода:" || echo -e "[*]   or leave empty to exit:"
+        [ "$LANGUAGE" = "RU" ] && echo -e -n "[*]${zsh} IP-адрес DNS: ${endc}" || echo -e -n "[*]${zsh} IP address DNS: ${endc}"
+        read -e NEW_IP
+        
+        # Если пользователь не ввел IP, выходим
+        if [ -z "$NEW_IP" ]; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+          echo =================================
+          exit 1
+        fi
+        
+        # Проверка корректности IP
+        RESULT=$(check_ip_valid "$NEW_IP")
+        if [ "$RESULT" = "valid" ]; then
+          VALID_IP=true
+          DNS_IP=$NEW_IP
+        else
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: Вы ввели неверный IP-адрес DNS.${endc}" || echo -e "[*] ${rz}Error: You entered an invalid IP address DNS.${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Попробуйте еще раз." || echo -e "[*] Try again."
+        fi
+      done
+    fi
+    case "$DNS_LIST_TYPE" in
+      dns1)
+        TARGET_FILE="/etc/dnsney/black_dns1.list"
+        ;;
+      dns2)
+        TARGET_FILE="/etc/dnsney/black_dns2.list"
+        ;;
+      dns3)
+        TARGET_FILE="/etc/dnsney/black_dns3.list"
+        ;;
+      dns4)
+        TARGET_FILE="/etc/dnsney/black_dns4.list"
+        ;;
+      *)
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: неверный тип списка. Допустимые значения: dns1, dns2, dns3, dns4.${endc}" || echo -e "[*] ${rz}Error: invalid list type. Valid values: dns1, dns2, dns3, dns4.${endc}"
+        echo =================================
+        exit 1
+        ;;
+    esac
+    # Проверяем режим - добавление или удаление
+    if [ "$MODE" = "add" ]; then
+      # Проверяем, существует ли уже этот IP в файле
+      if grep -q "^$DNS_IP$" "$TARGET_FILE" 2>/dev/null; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} IP-адрес DNS $DNS_IP уже существует в списке $DNS_LIST_TYPE." || echo -e "[*] ${yz}Information:${endc} IP address DNS $DNS_IP already exists in list $DNS_LIST_TYPE."
+      else
+        # Добавляем IP в черный список
+        sudo mkdir -p "$(dirname "$TARGET_FILE")" 2>/dev/null
+        echo "$DNS_IP" | sudo tee -a "$TARGET_FILE" > /dev/null
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} IP-адрес DNS $DNS_IP добавлен в черный список $DNS_LIST_TYPE." || echo -e "[*] ${gz}Done:${endc} IP address DNS $DNS_IP added to black list $DNS_LIST_TYPE."
+      fi
+    else
+      # Режим удаления
+      if [ -f "$TARGET_FILE" ] && grep -q "^$DNS_IP$" "$TARGET_FILE" 2>/dev/null; then
+        # Удаляем IP из черного списка
+        sudo sed -i "/^$DNS_IP$/d" "$TARGET_FILE"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} IP-адрес DNS $DNS_IP удален из черного списка $DNS_LIST_TYPE." || echo -e "[*] ${gz}Done:${endc} IP address DNS $DNS_IP removed from black list $DNS_LIST_TYPE."
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} IP-адрес DNS $DNS_IP не найден в списке $DNS_LIST_TYPE." || echo -e "[*] ${yz}Information:${endc} IP address DNS $DNS_IP not found in list $DNS_LIST_TYPE."
+      fi
+    fi
+    # Запускаем wanresolv для обновления DNS-конфигурации
+    sudo /opt/wanresolv 1>/dev/null 2>&1
+    echo =================================
+    shift
+    exit 0 ;;
+    reinstall)
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${blink}Подождите...${endc}" || echo -e "[*] ${blink}Wait...${endc}"
+    sudo DEBIAN_FRONTEND=noninteractive dpkg-reconfigure resolvconf 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Пожалуйста, перезагрузить малину" || echo -e "[*] ${gz}Done:${endc} Please reboot the Raspberry Pi"
+    echo =================================
+    shift
+    exit 1 ;;
+    *)
+    if [ "$LANGUAGE" = "RU" ]; then
+cat << EOF
+[*] Использование: sudo dnsney [опции]
+[*] Опции:
+[*]  manager                                - менеджер DNS
+[*]  auto                                   - автоматический DNS
+[*]  auto-off                               - выключить автоматический DNS
+[*]  list                                   - выбрать готовый DNS (Cloudflare, Google, Quad9 Secure, etc)
+[*]  vpn                                    - выбрать DNS для VPN (NordVPN, ProtonVPN, ExpressVPN, etc)
+[*]  dns [DNS]                              - ввести другой DNS (IPv4)
+[*]  dns [DNS1] [DNS2]                      - ввести два другие DNS (IPv4)
+[*]  black                                  - менеджер блек-листа DNS
+[*]  black add [dns1|dns2|dns3|dns4] [DNS]  - добавить DNS в блек-лист
+[*]  black del [dns1|dns2|dns3|dns4] [DNS]  - удалить DNS из блек-листа
+[*]  reinstall                              - сбросить настройку DNS.
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)
+EOF
+    else
+cat << EOF
+[*] Usage: sudo dnsney [options]
+[*] Options:
+[*]  manager                                - DNS manager
+[*]  auto                                   - automatic DNS
+[*]  auto-off                               - disable automatic DNS
+[*]  list                                   - select ready DNS (Cloudflare, Google, Quad9 Secure, etc)
+[*]  vpn                                    - select DNS for VPN (NordVPN, ProtonVPN, ExpressVPN, etc)
+[*]  dns [DNS]                              - enter another DNS (IPv4)
+[*]  dns [DNS1] [DNS2]                      - enter two other DNS (IPv4)
+[*]  black                                  - manager black-list DNS
+[*]  black add [dns1|dns2|dns3|dns4] [DNS]  - add DNS to black-list
+[*]  black del [dns1|dns2|dns3|dns4] [DNS]  - remove DNS from black-list
+[*]  reinstall                              - reset DNS settings.
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+EOF
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+esac

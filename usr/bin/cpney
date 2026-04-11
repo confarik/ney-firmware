@@ -1,0 +1,240 @@
+#!/bin/bash
+
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e =========='|'$bz' CPNey 1.0 '$endc'|'=========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+# Конфигурационный файл для языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+
+# Загрузка настроек языка
+if [ -f "$LANGUAGE_CONFIG" ]; then
+    source "$LANGUAGE_CONFIG"
+else
+    # По умолчанию английский
+    LANGUAGE="EN"
+    # Создаем конфиг если не существует
+    mkdir -p "$(dirname "$LANGUAGE_CONFIG")"
+    echo "# Language 1.0 by Ney
+LANGUAGE=\"EN\"" > "$LANGUAGE_CONFIG"
+fi
+
+# Функция смены языка
+change_language() {
+    # Переключаем язык в конфиге
+    if [ "$LANGUAGE" = "EN" ]; then
+        LANGUAGE="RU"
+    else
+        LANGUAGE="EN"
+    fi
+    
+    # Сохраняем изменения в конфиге
+    sed -i "s/LANGUAGE=\"[A-Z]*\"/LANGUAGE=\"$LANGUAGE\"/g" "$LANGUAGE_CONFIG"
+    sleep 1
+    
+    # Сохраняем текущие аргументы командной строки и перезапускаем скрипт
+    if [ "$1" = "manager" ]; then
+        exec $0 manager
+    else
+        exec $0 "$@"
+    fi
+}
+
+LANG_MODE=false
+
+# Переключение языка и выход, если режим языка активен
+if $LANG_MODE; then
+  # Если не был указан язык, переключаем на следующий
+  change_language
+  exit 0
+fi
+
+NAMEBR=Br0
+LSERVER=$(nmcli con show $NAMEBR | grep "ipv4.addresses:" | awk '{print $2}' | cut -d/ -f1)
+
+# Подготовка заголовка fzf в зависимости от языка
+if [ "$LANGUAGE" = "RU" ]; then
+    # Русский
+    FZF_HEADER="enter: выбрать
+ESC: выход
+      Другие настройки:"
+    BORDER_LABEL="| Другие настройки Linux Ney |"
+    EXIT_MSG="Для выхода нажмите любую клавишу"
+    INTERACTIVE=" [1]  Локальный IPv4 Linux Ney: $LSERVER
+ [2]  Имя хоста: $HOSTNAME
+ 
+ [3]  Language/Язык: $LANGUAGE
+ [4]  Перезагрузить малину
+ [5]  Сбросить настройки сети
+ [6]  Выключить малину"
+    HELP="[*] Использование: sudo cpney [опции]
+[*] Опции:
+[*]  panel  - другие настройки Linux Ney
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)"
+else
+    # Английский
+    FZF_HEADER="enter: select
+ESC: exit
+      Other settings:"
+    BORDER_LABEL="| Other settings Linux Ney |"
+    EXIT_MSG="Press any key to exit"
+    INTERACTIVE=" [1]  Local IPv4 Linux Ney: $LSERVER
+ [2]  Hostname: $HOSTNAME
+ 
+ [3]  Language/Язык: $LANGUAGE
+ [4]  Reload raspberry pi
+ [5]  Reset network settings
+ [6]  Shutdown raspberry pi"
+    HELP="[*] Usage: sudo cpney [options]
+[*] Options:
+[*]  panel  - other settings Linux Ney
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)"
+fi
+
+case $1 in
+    panel)
+    while true; do
+      CHOICE=$(echo "$INTERACTIVE" | fzf --ansi --pointer=">" \
+          --header="$FZF_HEADER" \
+          --bind 'enter:become(echo {})' \
+          --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+          --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$CHOICE" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 0
+      fi
+      case "$CHOICE" in             
+        *"[1]"*)
+        sudo ipney -q lip
+        ;;
+        *"[2]"*)
+        sudo ipney -q hostname
+        ;;
+
+        *"[3]"*)
+        if [ "$LANGUAGE" != "RU" ]; then
+          echo -e "[*] Установлен язык ${zsh}RU${endc}."
+          echo -e "[*] ${yz}Пожалуйста, перезапустите скрипт.${endc}"
+          echo -e "[*]      ${yz}ctrl-c: выйти из скрипта.${endc}"
+        else
+          echo -e "[*] Language set to ${zsh}EN${endc}."
+          echo -e "[*] ${yz}Please restart the script.${endc}"
+          echo -e "[*]      ${yz}ctrl-c: exit script.${endc}"
+        fi
+        change_language -q panel
+        ;;
+        *"[4]"*)
+        sudo reboot
+        exit 1
+        ;;
+        *"[5]"*)
+        if [ "$LANGUAGE" = "RU" ]; then
+          echo 'Для сброса ввести:'
+          echo '1. sudo -Es'
+          echo '2. resetney'
+        else
+          echo 'For reset, enter:'
+          echo '1. sudo -Es'
+          echo '2. resetney'
+        fi
+        echo =================================
+        echo -e "\033[2;37m[*] $EXIT_MSG\033[0m"
+        read -n 1 -s
+        exec $0 -q panel
+        ;;
+        *"[6]"*)
+        sudo poweroff
+        exit 1
+        ;;       
+        esac
+      done
+    shift
+    exit 0 ;;
+    #fan)
+    #echo =================================
+    #shift
+    #exit 1 ;;
+    *)
+    echo -e "$HELP"
+    echo =================================
+    shift
+    exit 1 ;;
+esac

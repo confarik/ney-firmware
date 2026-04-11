@@ -1,0 +1,527 @@
+#!/bin/bash
+export LASTCMD=$@
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+# Проверка флага -no для отключения MPPE
+NO_MPPE=false
+if [ "$1" = "-no" ]; then
+  NO_MPPE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e ========='|'$bz' PPTPNey 2.1 '$endc'|'========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+TIME=11
+HOMENEY=/home/ney
+HISTORY=/etc/history-vpn-proxy
+# Функция для проверки, является ли строка IP-адресом или хостом
+is_ip_or_host() {
+  local check_str=$1
+  [[ -z "$check_str" ]] && return 1
+  if [[ $check_str =~ ^[0-9.]+$ ]]; then
+    [[ $check_str =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]] && return 0
+    return 1
+  fi
+  [[ $check_str == *"."* && $check_str != *" "* && ! $check_str =~ ^[0-9.]+$ ]] && return 0
+  return 1
+}
+stop_pptpney() {
+  DELIP=$(route -n | grep UGH | awk '{print $1}') 1>/dev/null 2>&1
+  sudo poff ${0##*/} 1>/dev/null 2>&1
+  sudo route delete $DELIP 1>/dev/null 2>&1
+  sleep 1
+  sudo killall -9 pppd 1>/dev/null 2>&1
+}
+case $1 in
+    manager)
+    PPTP_CONNECTED=$(sudo bash -c 'ps aux | grep "/usr/sbin/pppd.*pptpney" | grep -v grep || echo false')
+    if [ "$PPTP_CONNECTED" = "false" ]; then
+      [ "$LANGUAGE" = "RU" ] && PPTP_CONNECTED="не подключено" || PPTP_CONNECTED="not connected"
+    else
+      [ "$LANGUAGE" = "RU" ] && PPTP_CONNECTED="подключено" || PPTP_CONNECTED="connected"
+    fi
+    LAST_SERVERIP=$(sudo bash -c 'if [ -f /etc/ppp/peers/pptpney ] && grep -q "pty" /etc/ppp/peers/pptpney; then grep "pty" /etc/ppp/peers/pptpney | awk "{print \$3}"; else echo "N/A"; fi')
+    AUTOSTART_PPTP=$(systemctl is-enabled pptpney 2>/dev/null)
+    if [ "$AUTOSTART_PPTP" = "disabled" ]; then
+      [ "$LANGUAGE" = "RU" ] && AUTOSTART_PPTP="отключено" || AUTOSTART_PPTP="disabled"
+    else
+      [ "$LANGUAGE" = "RU" ] && AUTOSTART_PPTP="включено" || AUTOSTART_PPTP="enabled"
+    fi
+
+    if [ "$LANGUAGE" = "RU" ]; then
+      FZF_HEADER="
+[*] PPTP VPN-клиент: $PPTP_CONNECTED - $LAST_SERVERIP
+[*]  Автоподключение: $AUTOSTART_PPTP
+
+Enter: подключить
+n: подключить новый
+m: подключить (без MPPE)
+s: остановить
+a: включить автоподключение
+d: выключить автоподключение
+c: очистить историю
+ctrl-i: импортировать историю
+ctrl-e: экспортировать историю
+ESC: выйти"
+      EXIT_MSG="Для выхода нажмите любую клавишу"
+      BORDER_LABEL="| Менеджер PPTP VPN-клиент |"
+    else
+      FZF_HEADER="
+[*] PPTP VPN-client: $PPTP_CONNECTED - $LAST_SERVERIP
+[*]  Autostart: $AUTOSTART_PPTP
+
+enter: re-connect
+n: connect new
+m: re-connect (no MPPE)
+s: stop
+a: enable autostart
+d: disable autostart
+c: clear history
+ctrl-i: import
+ctrl-e: export
+ESC: exit"
+      EXIT_MSG="Press any key to exit"
+      BORDER_LABEL="| PPTP VPN-client manager |"
+    fi
+
+    HISTORYPPTP=$(cat $HISTORY/pptpney-h 2>/dev/null | sort -r -k2,2 | sed "s/NO VALID/$(echo -e "$rz")NO VALID$(echo -e "$endc")/g" | sed "s/  VALID/$(echo -e "$gz")  VALID$(echo -e "$endc")/g" | fzf --ansi \
+      --header="$FZF_HEADER" \
+      --bind='enter:execute(sudo $(echo {} | grep -o "pptpney.*"); echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(pptpney -q manager)' \
+      --bind='n:execute(sudo pptpney -q new; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(pptpney -q manager)' \
+      --bind='m:execute(sudo pptpney -q -no $(echo {} | grep -o "on .*"); echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(pptpney -q manager)' \
+      --bind='s:execute-silent(sudo pptpney -s && sleep 1)+become(pptpney -q manager)' \
+      --bind='a:execute-silent(sudo pptpney enable && sleep 1)+become(pptpney -q manager)' \
+      --bind='d:execute-silent(sudo pptpney disable && sleep 1)+become(pptpney -q manager)' \
+      --bind='c:execute-silent(sudo pptpney clear && sleep 1)+become(pptpney -q manager)' \
+      --bind='ctrl-i:execute(sudo pptpney -q import; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -t 2 -n 1 -s)+become(pptpney -q manager)' \
+      --bind='ctrl-e:execute(sudo pptpney -q export; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -t 2 -n 1 -s)+reload(pptpney -q manager)' \
+      --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+      --height=40% --info=inline --margin=1 --padding=1)
+    if [ -z "$HISTORYPPTP" ]; then
+      if ! $QUIET_MODE; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+      fi
+      exit 1
+    fi
+    exit 0
+    ;;
+    new)
+    # Цикл для повторного ввода в случае ошибки
+    while true; do
+        if [ "$LANGUAGE" = "RU" ]; then
+            # Ввод данных сервера в одной строке
+            echo -e [*] ''$zsh'Введите данные PPTP VPN в одном из любых форматов:'$endc''
+            echo -e [*] '  IP/Host:логин:пароль'
+            echo -e [*] '  IP/Host логин пароль'
+            echo -e [*] '  IP/Host|логин|пароль'
+            echo -e [*] '  логин:пароль:IP/Host'
+            echo -e [*] '  логин пароль IP/Host'
+            echo -e [*] '  логин|пароль|IP/Host'
+            echo -e [*]
+            read -p "Вставьте или введите данные PPTP VPN: " server_info
+        else
+            # Ввод данных сервера в одной строке
+            echo -e [*] ''$zsh'Enter PPTP VPN data in any of the following formats:'$endc''
+            echo -e [*] '  IP/Host:login:password'
+            echo -e [*] '  IP/Host login password'
+            echo -e [*] '  IP/Host|login|password'
+            echo -e [*] '  login:password:IP/Host'
+            echo -e [*] '  login password IP/Host'
+            echo -e [*] '  login|password|IP/Host'
+            echo -e [*]
+            read -p "Paste or enter PPTP VPN data: " server_info
+        fi
+        
+        # Определяем разделитель и разбиваем строку
+        if [[ "$server_info" == *":"* ]]; then
+            # Разделитель - двоеточие
+            IFS=':' read -r part1 part2 part3 <<< "$server_info"
+        elif [[ "$server_info" == *"|"* ]]; then
+            # Разделитель - вертикальная черта
+            IFS='|' read -r part1 part2 part3 <<< "$server_info"
+        else
+            # Предполагаем разделитель - пробел
+            read -r part1 part2 part3 <<< "$server_info"
+        fi
+        
+        # Определяем, что из частей является IP/Host и что логином/паролем
+        SERVERIP=""
+        SERVERLOGIN=""
+        SERVERPASS=""
+        
+        if is_ip_or_host "$part1"; then
+            # Формат: IP/Host логин пароль
+            SERVERIP=$part1
+            SERVERLOGIN=$part2
+            SERVERPASS=$part3
+        elif is_ip_or_host "$part3"; then
+            # Формат: логин пароль IP/Host
+            SERVERLOGIN=$part1
+            SERVERPASS=$part2
+            SERVERIP=$part3
+        else
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось определить IP/Host в введенной строке.${endc}" || echo -e "[*] ${rz}Error: failed to determine IP/Host in the input string.${endc}"
+            continue
+        fi
+        
+        # Проверка наличия необходимых параметров
+        if [ -z "$SERVERIP" ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан IP/Host сервера.${endc}" || echo -e "[*] ${rz}Error: server IP/Host not specified.${endc}"
+            continue
+        fi
+        
+        if [ -z "$SERVERLOGIN" ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан логин.${endc}" || echo -e "[*] ${rz}Error: login not specified.${endc}"
+            continue
+        fi
+        
+        if [ -z "$SERVERPASS" ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан пароль.${endc}" || echo -e "[*] ${rz}Error: password not specified.${endc}"
+            continue
+        fi
+        break
+    done
+    
+    # Запускаем подключение с полученными параметрами
+    sudo pptpney on "$SERVERIP" "$SERVERLOGIN" "$SERVERPASS"
+    exit $?
+    ;;
+    on|pon|start)
+    if [ -z "$3" ] && [ -n "$2" ]; then
+        # Если есть только один аргумент, обрабатываем его как строку с разделителями
+        server_info="$2"
+        # Разбиваем строку на части
+        if [[ "$server_info" == *"|"* ]]; then
+            # Разделитель - вертикальная черта
+            IFS='|' read -r part1 part2 part3 <<< "$server_info"
+        elif [[ "$server_info" == *":"* && "$server_info" != *" "* ]]; then
+            # Разделитель - двоеточие
+            IFS=':' read -r part1 part2 part3 <<< "$server_info"
+        else
+            # Предполагаем разделитель - пробел
+            read -r part1 part2 part3 <<< "$server_info"
+        fi
+
+        # Определяем, что из частей является IP/Host и что логином/паролем
+        if is_ip_or_host "$part1"; then
+            # Формат: IP/Host логин пароль
+            SERVERIP=$part1
+            SERVERLOGIN=$part2
+            SERVERPASS=$part3
+        elif is_ip_or_host "$part3"; then
+            # Формат: логин пароль IP/Host
+            SERVERLOGIN=$part1
+            SERVERPASS=$part2
+            SERVERIP=$part3
+        else
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось определить IP/Host в введенной строке.${endc}" || echo -e "[*] ${rz}Error: failed to determine IP/Host in the input string.${endc}"
+            echo =================================
+            exit 1
+        fi
+    else
+        # Старый формат с тремя аргументами
+        # Проверяем, какой из аргументов является IP/Host
+        if is_ip_or_host "$4"; then
+            SERVERIP="$4"
+            SERVERLOGIN="$2"
+            SERVERPASS="$3"
+        elif is_ip_or_host "$2"; then
+            SERVERIP="$2"
+            SERVERLOGIN="$3"
+            SERVERPASS="$4"
+        else
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось определить IP/Host среди аргументов.${endc}" || echo -e "[*] ${rz}Error: failed to determine IP/Host among arguments.${endc}"
+            echo =================================
+            exit 1
+        fi
+    fi
+
+    # Проверка наличия необходимых параметров
+    if [ -z "$SERVERIP" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан IP/Host сервера.${endc}" || echo -e "[*] ${rz}Error: server IP/Host not specified.${endc}"
+      echo =================================
+      exit 1
+    fi
+    if [ -z "$SERVERLOGIN" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан логин.${endc}" || echo -e "[*] ${rz}Error: login not specified.${endc}"
+      echo =================================
+      exit 1
+    fi
+    if [ -z "$SERVERPASS" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан пароль.${endc}" || echo -e "[*] ${rz}Error: password not specified.${endc}"
+      echo =================================
+      exit 1
+    fi
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сервер IP/Host: ${zsh}$SERVERIP${endc}" || echo -e "[*] Server IP/Host: ${zsh}$SERVERIP${endc}"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Логин: ${zsh}$SERVERLOGIN${endc}" || echo -e "[*] Login: ${zsh}$SERVERLOGIN${endc}"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль: ${zsh}$SERVERPASS${endc}" || echo -e "[*] Password: ${zsh}$SERVERPASS${endc}"
+    if [ "$NO_MPPE" = "true" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] MPPE: ${rz}отключен${endc}" || echo -e "[*] MPPE: ${rz}disabled${endc}"
+    fi
+    echo [*]
+    sudo ifconfig | egrep -o "ppp0" 1>/dev/null 2>&1
+    if [ "$?" != "1" ]; then
+      DELIP=$(route -n | grep UGH | awk '{print $1}') 1>/dev/null 2>&1
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Рестарт...${endc}" || echo -e "[*] ${yz}Restart...${endc}"
+      sudo poff sstpney 1>/dev/null 2>&1
+      sudo poff pptpney 1>/dev/null 2>&1
+      sudo /usr/sbin/ipsec stop 1>/dev/null 2>&1
+      sudo /etc/init.d/xl2tpd stop 1>/dev/null 2>&1
+      sudo sh -c "echo 'd l2tpney' > /var/run/xl2tpd/l2tp-control" 1>/dev/null 2>&1
+      sudo ipsec down l2tpney 1>/dev/null 2>&1
+      sudo ipsec down ikev2ney 1>/dev/null 2>&1
+      sudo route delete $DELIP 1>/dev/null 2>&1
+      sleep 1
+      sudo killall -9 pppd 1>/dev/null 2>&1
+      sleep 1
+    fi
+    sudo ifconfig vti0 1>/dev/null 2>&1
+    if [ "$?" != "1" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Рестарт...${endc}" || echo -e "[*] ${yz}Restart...${endc}"
+      sudo ikev2ney -s
+      sleep 5
+    fi
+    [ "$LANGUAGE" = "RU" ] && echo -n "[*] Подключаемся к серверу по PPTP VPN." || echo -n "[*] Connecting to the server by PPTP VPN."
+    
+    PPTP_CONF=/etc/ppp/peers/${0##*/}
+# Создаем разный конфигурационный файл в зависимости от флага NO_MPPE
+if [ "$NO_MPPE" = "true" ]; then
+  # Без MPPE
+  cat > $PPTP_CONF <<EOF
+pty "pptp $SERVERIP --nolaunchpppd"
+name $SERVERLOGIN
+password $SERVERPASS
+remotename ${0##*/}
+ipparam ${0##*/}
+nomppe-stateful
+EOF
+else
+  # С MPPE
+  cat > $PPTP_CONF <<EOF
+pty "pptp $SERVERIP --nolaunchpppd"
+name $SERVERLOGIN
+password $SERVERPASS
+remotename ${0##*/}
+ipparam ${0##*/}
+require-mppe
+require-mppe-40
+require-mppe-128
+nomppe-stateful
+EOF
+fi
+
+# Добавляем общие опции в конфиг
+cat >> $PPTP_CONF <<EOF
+require-mschap-v2
+refuse-eap
+refuse-pap
+refuse-chap
+refuse-mschap
+mtu 1450
+mru 1450
+noauth
+debug
+persist
+maxfail 0
+proxyarp
+defaultroute
+replacedefaultroute
+usepeerdns
+EOF
+    sudo pon ${0##*/}
+    i=0
+    while [ $i -lt $TIME ];
+    do
+      sleep 1
+      echo -n "."
+      i=$(( $i + 1 ))
+      result=$(ifconfig | grep -v ippp0 | grep ppp0 | awk '{print $1}')
+      if ! test -z "$result" ; then
+        echo
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Подключен к серверу по PPTP VPN." || echo -e "[*] ${gz}Done:${endc} Connected to the server by PPTP VPN."
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Время: `date +%T` `date +%d-%m-%Y`" || echo -e "[*] Time: `date +%T` `date +%d-%m-%Y`"
+        echo -e "`date +%T`  `date +%d-%m-%Y`  VALID = pptpney $LASTCMD" >> $HISTORY/pptpney-h
+        #echo [*] 'Отсоединить PPTP VPN-client - sudo pptpney -s'
+        echo =================================
+        break
+      fi
+    done
+    if test -z "$result" ; then
+      sudo poff ${0##*/} 1>/dev/null 2>&1
+      sudo route delete $SERVERIP 1>/dev/null 2>&1
+      sleep 1
+      sudo killall -9 pppd 1>/dev/null 2>&1
+      echo
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: не удалось подключиться к серверу по PPTP VPN.${endc}" || echo -e "[*] ${rz}Information: failed to connect to the server by PPTP VPN.${endc}"
+      echo -e "`date +%T`  `date +%d-%m-%Y`  NO VALID = pptpney $LASTCMD" >> $HISTORY/pptpney-h
+      echo =================================
+      exit 1
+    fi
+    shift
+    exit 1 ;;
+    -s|stop|off|poff)
+    stop_pptpney
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} PPTP VPN-клиент отсоединен." || echo -e "[*] ${gz}Done:${endc} PPTP VPN-client disconnected."
+    echo =================================
+    shift
+    exit 1 ;;
+    enable)
+    sudo systemctl enable pptpney.service 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Автоподключение PPTP VPN: ${zsh}включено${endc}" || echo -e "[*] ${gz}Done:${endc} Autostart PPTP VPN: ${zsh}enable${endc}"
+    echo =================================
+    shift
+    exit 1 ;;
+    disable)
+    sudo systemctl disable pptpney.service 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Автоподключение PPTP VPN: ${zsh}отключено${endc}" || echo -e "[*] ${gz}Done:${endc} Autostart PPTP VPN: ${zsh}disable${endc}"
+    echo =================================
+    shift
+    exit 1 ;;
+    clear)
+    sudo sed -i 'd' /etc/ppp/peers/pptpney 1>/dev/null 2>&1
+    sudo sh -c "echo > $HISTORY/pptpney-h 1>/dev/null 2>&1"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} История очищена." || echo -e "[*] ${gz}Done:${endc} History cleared."
+    echo =================================
+    shift
+    exit 1
+    ;;
+    import)
+    if [ ! "$(ls -A $HOMENEY/pptp-history 2>/dev/null)" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось найти файл pptp-history.${endc}" || echo -e "[*] ${rz}Error: failed to find pptp-history file.${endc}"
+      echo =================================
+      exit 1
+    fi
+    sudo cp $HOMENEY/pptp-history $HISTORY/pptpney-h 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Импорт выполнен." || echo -e "[*] ${gz}Done:${endc} Import completed."
+    echo =================================
+    shift
+    exit 1 ;;
+    export)
+    sudo cp $HISTORY/pptpney-h $HOMENEY/pptp-history 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Экспорт выполнен. Файл pptp-history в домашней папке." || echo -e "[*] ${gz}Done:${endc} Export completed. File pptp-history in home directory."
+    echo =================================
+    shift
+    exit 1 ;;
+    *)
+    if [ "$LANGUAGE" = "RU" ]; then
+cat << EOF
+[*] Использование: sudo pptpney [опции]
+[*] Опции:
+[*]  manager                              - менеджер PPTP VPN-клиент
+[*]  on [IP/Host] [логин] [пароль]        - подключить
+[*]  -no on [IP/Host] [логин] [пароль]    - подключение без MPPE (небезопасно)
+[*]  -s, stop, off, poff                  - отсоединить
+[*]  enable                               - включить автоподключение при вкл малины
+[*]  disable                              - выключить автоподключение при вкл малины
+[*]  clear                                - очистить историю
+[*]  import                               - импортировать историю подключений
+[*]  export                               - экспортировать историю подключений
+[*]
+[*]   Теория: Если на вашем роутере нет VPN и на малине PPTP не подключается,
+[*]     то PPTP заблокирован вашим провайдером. Если на роутере подключен VPN,
+[*]     то отключить его, потому что протокол PPTP не подключится сверху любого VPN,
+[*]     кроме SSTP и WireGuard.
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)
+EOF
+    else
+cat << EOF
+[*] Usage: sudo pptpney [options]
+[*] Options:
+[*]  manager                              - PPTP VPN-client manager
+[*]  on [IP/Host] [login] [password]      - connect
+[*]  -no on [IP/Host] [login] [password]  - connect without MPPE (not secure)
+[*]  -s, stop, off, poff                  - stop
+[*]  enable                               - enable autostart on boot
+[*]  disable                              - disable autostart on boot
+[*]  clear                                - clear history
+[*]  import                               - import history of connections
+[*]  export                               - export history of connections
+[*]
+[*]   Theory: If your router does not have a VPN and PPTP does not connect on the Raspberry Pi,
+[*]     then PPTP is blocked by your provider. If your router has a VPN connected,
+[*]     disconnect it, because PPTP protocol will not connect over any VPN,
+[*]     except for SSTP and WireGuard.
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+EOF
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+esac

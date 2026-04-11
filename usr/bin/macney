@@ -1,0 +1,363 @@
+#!/bin/bash
+
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e ========='|'$bz' MACNey 5.0 '$endc'|'=========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+warning() {
+  if echo $NAME | egrep -w -o "WLAN|LAN-IN|LAN[2-4]-IN" 1>/dev/null 2>&1 ; then
+    echo -e "[*] ${yz}Внимание: если ваш ПК подключен к роутеру, к которому малина подключена,${endc}"
+    echo -e "[*] ${yz}вы поменяете MAC-адрес только WiFi-WLAN или LAN(2-4)-IN, то терминал обрывется,${endc}"
+    echo -e "[*] ${yz}потому что новый MAC-адрес - новый IP, который выдаст ваш роутер. Перезапустите терминал. ;)${endc}"
+  fi
+}
+else
+  warning() {
+    if echo $NAME | egrep -w -o "WLAN|LAN-IN|LAN[2-4]-IN" 1>/dev/null 2>&1 ; then
+      echo -e "[*] ${yz}Attention: if your PC is connected to the router to which the Raspberry Pi is connected,${endc}"
+      echo -e "[*] ${yz}you will change the MAC-address only WiFi-WLAN or LAN(2-4)-IN, then the terminal will be interrupted,${endc}"
+      echo -e "[*] ${yz}because the new MAC-address - new IP, which will be issued by your router. Restart the terminal. ;)${endc}"
+    fi
+  }
+fi
+
+infomacadd() {
+  if nmcli con show | grep -w -o "$interface" 1>/dev/null 2>&1 ; then
+    interfacename=$(nmcli -p device show $interface | grep 'GENERAL.CONNECTION:' | awk '{print $2}')
+    interfacemacaddress=$(nmcli -p device show $interface | grep 'GENERAL.HWADDR:' | awk '{print $2}')
+    echo -e -n [*] ''$interfacename' ('$interface') - '$zsh''$interfacemacaddress''$endc''
+    orig_clon=$(nmcli con show $interfacename | grep 'cloned-mac-address:' | awk '{print $2}')
+    if [[ -z "$orig_clon" || "$orig_clon" == "permanent" || "$orig_clon" == "--" ]]; then
+      [ "$LANGUAGE" = "RU" ] && status="(оригинальный)" || status="(original)"
+    elif [[ "$orig_clon" == "random" ]]; then
+      [ "$LANGUAGE" = "RU" ] && status="${bz}(авторандомный)${endc}" || status="${bz}(autorandom)${endc}"
+    else
+      [ "$LANGUAGE" = "RU" ] && status="${gz}(подменный)${endc}" || status="${gz}(cloned)${endc}"
+    fi
+  fi
+}
+case $1 in
+    manager)
+    # Создаем временный файл для хранения информации об интерфейсах
+    TEMP_FILE=$(mktemp)
+    
+    # Функция для обновления данных о MAC-адресах
+    update_mac_data() {
+      local temp_data=$(mktemp)
+      local output_file=$(mktemp)
+      # Получаем список сетей
+      nmcli -t -f NAME con show | grep -E '^(WiFi-WLAN|WiFi-AP|WiFi-AP2|LAN-IN|LAN-OUT|LAN2-IN|LAN2-OUT|LAN3-IN|LAN3-OUT|LAN4-IN|LAN4-OUT)$' > $temp_data
+      # Форматируем список с актуальными данными
+      while read -r name; do
+        interface=$(nmcli -p con show "$name" | grep -E 'connection\.interface-name:' | awk '{print $2}')
+        if [ -z "$interface" ]; then
+          interface=$(nmcli -p con show "$name" | grep -E 'GENERAL\.DEVICES:' | awk '{print $2}')
+        fi
+        if [ -n "$interface" ]; then
+          interfacemacaddress=$(nmcli -p device show $interface 2>/dev/null | grep 'GENERAL.HWADDR:' | awk '{print $2}')
+          orig_clon=$(nmcli con show "$name" | grep 'cloned-mac-address:' | awk '{print $2}')
+          if [[ -z "$orig_clon" || "$orig_clon" == "permanent" || "$orig_clon" == "--" ]]; then
+            [ "$LANGUAGE" = "RU" ] && status="(оригинальный)" || status="(original)"
+          elif [[ "$orig_clon" == "random" ]]; then
+            [ "$LANGUAGE" = "RU" ] && status="${bz}(авторандомный)${endc}" || status="${bz}(autorandom)${endc}"
+          else
+            [ "$LANGUAGE" = "RU" ] && status="${gz}(подменный)${endc}" || status="${gz}(cloned)${endc}"
+          fi
+          # Проверяем доступен ли MAC-адрес
+          if [[ -z "$interfacemacaddress" ]]; then
+            interfacemacaddress="N/A"
+            status="(N/A)"
+          fi
+          # Проверяем активен ли интерфейс (используем две проверки)
+          if nmcli con show --active 2>/dev/null | grep -q "^$name "; then
+            conn_status="$gz●$endc"
+          else
+            conn_status="$rz●$endc"
+          fi
+          # Форматируем вывод
+          echo -e "$conn_status | $name ($interface) - $zsh$interfacemacaddress$endc $status" >> $output_file
+        fi
+      done < $temp_data
+      rm -f $temp_data
+      echo $output_file
+    }
+    
+    FORMATTED_FILE=$(update_mac_data)
+    
+    if [ -s $FORMATTED_FILE ]; then
+
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: рандом MAC-адрес
+m: ручной MAC-адрес
+a: авторандом MAC-адрес
+o: вернуть оригинальный MAC-адрес
+ESC: exit"
+        BORDER_LABEL="| Менеджер MAC-адрес |"
+      else
+        FZF_HEADER="
+enter: random MAC-address
+m: manual MAC-address
+a: autorandom MAC-address
+o: return original MAC-address
+ESC: exit"
+        BORDER_LABEL="| MAC-address manager |"
+      fi
+      SELECTED_LINE=$(cat $FORMATTED_FILE | fzf --ansi --style default \
+        --header="$FZF_HEADER" \
+        --bind='m:execute(conn=$(echo {} | cut -d" " -f3); echo -e "\n[*] Введите новый MAC-адрес для \033[1m$conn\033[0m:\n  (Формат: xx:xx:xx:xx:xx:xx)\n  (ctrl-c: exit)"; read -p "> " MAC; [ -n "$MAC" ] && sudo macney -on "$conn" "$MAC" && sleep 1)+reload(temp_data=$(mktemp); nmcli -t -f NAME con show | grep -E "^(WiFi-WLAN|WiFi-AP|WiFi-AP2|LAN-IN|LAN-OUT|LAN2-IN|LAN2-OUT|LAN3-IN|LAN3-OUT|LAN4-IN|LAN4-OUT)$" > $temp_data; output_file=$(mktemp); while read -r name; do interface=$(nmcli -p con show "$name" | grep -E "connection\.interface-name:" | awk "{print \$2}"); if [ -z "$interface" ]; then interface=$(nmcli -p con show "$name" | grep -E "GENERAL\.DEVICES:" | awk "{print \$2}"); fi; if [ -n "$interface" ]; then interfacemacaddress=$(nmcli -p device show $interface 2>/dev/null | grep "GENERAL.HWADDR:" | awk "{print \$2}"); orig_clon=$(nmcli con show "$name" | grep "cloned-mac-address:" | awk "{print \$2}"); status="\033[1;32m(подменный)\033[0m"; if [[ -z "$orig_clon" || "$orig_clon" == "permanent" || "$orig_clon" == "--" ]]; then status="(оригинальный)"; elif [[ "$orig_clon" == "random" ]]; then status="\033[44;37m(авторандомный)\033[0m"; fi; if [[ -z "$interfacemacaddress" ]]; then interfacemacaddress="N/A"; status="(N/A)"; fi; if nmcli con show --active 2>/dev/null | grep -q "^$name "; then conn_status="\033[1;32m●\033[0m"; else conn_status="\033[1;31m●\033[0m"; fi; echo -e "$conn_status | $name ($interface) - \033[1m$interfacemacaddress\033[0m $status" >> $output_file; fi; done < $temp_data; rm -f $temp_data; cat $output_file; rm -f $output_file)' \
+        --bind='enter:execute(sudo macney -random $(echo {} | cut -d" " -f3) && sleep 1)+reload(temp_data=$(mktemp); nmcli -t -f NAME con show | grep -E "^(WiFi-WLAN|WiFi-AP|WiFi-AP2|LAN-IN|LAN-OUT|LAN2-IN|LAN2-OUT|LAN3-IN|LAN3-OUT|LAN4-IN|LAN4-OUT)$" > $temp_data; output_file=$(mktemp); while read -r name; do interface=$(nmcli -p con show "$name" | grep -E "connection\.interface-name:" | awk "{print \$2}"); if [ -z "$interface" ]; then interface=$(nmcli -p con show "$name" | grep -E "GENERAL\.DEVICES:" | awk "{print \$2}"); fi; if [ -n "$interface" ]; then interfacemacaddress=$(nmcli -p device show $interface 2>/dev/null | grep "GENERAL.HWADDR:" | awk "{print \$2}"); orig_clon=$(nmcli con show "$name" | grep "cloned-mac-address:" | awk "{print \$2}"); status="\033[1;32m(подменный)\033[0m"; if [[ -z "$orig_clon" || "$orig_clon" == "permanent" || "$orig_clon" == "--" ]]; then status="(оригинальный)"; elif [[ "$orig_clon" == "random" ]]; then status="\033[44;37m(авторандомный)\033[0m"; fi; if [[ -z "$interfacemacaddress" ]]; then interfacemacaddress="N/A"; status="(N/A)"; fi; if nmcli con show --active 2>/dev/null | grep -q "^$name "; then conn_status="\033[1;32m●\033[0m"; else conn_status="\033[1;31m●\033[0m"; fi; echo -e "$conn_status | $name ($interface) - \033[1m$interfacemacaddress\033[0m $status" >> $output_file; fi; done < $temp_data; rm -f $temp_data; cat $output_file; rm -f $output_file)' \
+        --bind='a:execute(sudo macney -autorandom $(echo {} | cut -d" " -f3) && sleep 1)+reload(temp_data=$(mktemp); nmcli -t -f NAME con show | grep -E "^(WiFi-WLAN|WiFi-AP|WiFi-AP2|LAN-IN|LAN-OUT|LAN2-IN|LAN2-OUT|LAN3-IN|LAN3-OUT|LAN4-IN|LAN4-OUT)$" > $temp_data; output_file=$(mktemp); while read -r name; do interface=$(nmcli -p con show "$name" | grep -E "connection\.interface-name:" | awk "{print \$2}"); if [ -z "$interface" ]; then interface=$(nmcli -p con show "$name" | grep -E "GENERAL\.DEVICES:" | awk "{print \$2}"); fi; if [ -n "$interface" ]; then interfacemacaddress=$(nmcli -p device show $interface 2>/dev/null | grep "GENERAL.HWADDR:" | awk "{print \$2}"); orig_clon=$(nmcli con show "$name" | grep "cloned-mac-address:" | awk "{print \$2}"); status="\033[1;32m(подменный)\033[0m"; if [[ -z "$orig_clon" || "$orig_clon" == "permanent" || "$orig_clon" == "--" ]]; then status="(оригинальный)"; elif [[ "$orig_clon" == "random" ]]; then status="\033[44;37m(авторандомный)\033[0m"; fi; if [[ -z "$interfacemacaddress" ]]; then interfacemacaddress="N/A"; status="(N/A)"; fi; if nmcli con show --active 2>/dev/null | grep -q "^$name "; then conn_status="\033[1;32m●\033[0m"; else conn_status="\033[1;31m●\033[0m"; fi; echo -e "$conn_status | $name ($interface) - \033[1m$interfacemacaddress\033[0m $status" >> $output_file; fi; done < $temp_data; rm -f $temp_data; cat $output_file; rm -f $output_file)' \
+        --bind='o:execute(sudo macney -off $(echo {} | cut -d" " -f3) && sleep 1)+reload(temp_data=$(mktemp); nmcli -t -f NAME con show | grep -E "^(WiFi-WLAN|WiFi-AP|WiFi-AP2|LAN-IN|LAN-OUT|LAN2-IN|LAN2-OUT|LAN3-IN|LAN3-OUT|LAN4-IN|LAN4-OUT)$" > $temp_data; output_file=$(mktemp); while read -r name; do interface=$(nmcli -p con show "$name" | grep -E "connection\.interface-name:" | awk "{print \$2}"); if [ -z "$interface" ]; then interface=$(nmcli -p con show "$name" | grep -E "GENERAL\.DEVICES:" | awk "{print \$2}"); fi; if [ -n "$interface" ]; then interfacemacaddress=$(nmcli -p device show $interface 2>/dev/null | grep "GENERAL.HWADDR:" | awk "{print \$2}"); orig_clon=$(nmcli con show "$name" | grep "cloned-mac-address:" | awk "{print \$2}"); status="\033[1;32m(подменный)\033[0m"; if [[ -z "$orig_clon" || "$orig_clon" == "permanent" || "$orig_clon" == "--" ]]; then status="(оригинальный)"; elif [[ "$orig_clon" == "random" ]]; then status="\033[44;37m(авторандомный)\033[0m"; fi; if [[ -z "$interfacemacaddress" ]]; then interfacemacaddress="N/A"; status="(N/A)"; fi; if nmcli con show --active 2>/dev/null | grep -q "^$name "; then conn_status="\033[1;32m●\033[0m"; else conn_status="\033[1;31m●\033[0m"; fi; echo -e "$conn_status | $name ($interface) - \033[1m$interfacemacaddress\033[0m $status" >> $output_file; fi; done < $temp_data; rm -f $temp_data; cat $output_file; rm -f $output_file)' \
+        --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=40% --info=inline --margin=1 --padding=1)
+      rm $TEMP_FILE $FORMATTED_FILE
+      if [ -z "$SELECTED_LINE" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 1
+      fi
+    fi
+    shift
+    exit 1 ;;
+    -on)
+    NAME="$2" MACADDRSS="$3"
+    CHECKNAME=$(nmcli con show | egrep -w $NAME | awk '{print $1}')
+    if [[ "$NAME" == "$CHECKNAME" ]]; then
+      if [ -n "$MACADDRSS" ]; then
+        if [[ "${MACADDRSS,,}" =~ ^([0-9abcdef]{2}:){5}[0-9abcdef]{2}$ ]]; then
+          warning
+          # Проверяем активен ли интерфейс перед изменением MAC-адреса
+          IS_ACTIVE=$(nmcli con show --active 2>/dev/null | grep -q "^$NAME " && echo "true" || echo "false")
+          sudo nmcli con down $NAME 1>/dev/null 2>&1
+          if echo $NAME | egrep -w 'LAN|LAN[2-4]' 1>/dev/null 2>&1 ; then
+            sudo nmcli con mod $NAME ethernet.cloned-mac-address $MACADDRSS 1>/dev/null 2>&1
+          else
+            sudo nmcli con mod $NAME wifi.cloned-mac-address $MACADDRSS 1>/dev/null 2>&1
+          fi
+          # Поднимаем интерфейс только если он был активен до изменения MAC-адреса
+          if [[ "$IS_ACTIVE" == "true" ]]; then
+            sudo nmcli con up $NAME 1>/dev/null 2>&1
+          fi
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Имя: ${zsh}$NAME${endc}" || echo -e "[*] Name: ${zsh}$NAME${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] MAC-адрес: ${zsh}$MACADDRSS${endc}" || echo -e "[*] MAC-address: ${zsh}$MACADDRSS${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} MAC-адрес изменен." || echo -e "[*] ${gz}Done:${endc} MAC-address изменен."
+          echo =================================
+        else
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: Вы ввели неверный MAC-адрес.${endc}" || echo -e "[*] ${rz}Error: You entered an invalid MAC-address.${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Английские буквы a, b, c, d, e, f (остальные буквы не бывают) и любую цифру.${endc}" || echo -e "[*] ${yz}English letters a, b, c, d, e, f (other letters do not exist) and any number.${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Очень важно: не должно быть 3 и более одинаковых символа в трех парах (слева) из шести пар.${endc}" || echo -e "[*] ${yz}Very important: there should not be 3 or more identical characters in three pairs (left) of six pairs.${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пример:${endc} 00:15:5d:3a:bc:f4" || echo -e "[*] ${yz}Example:${endc} 00:15:5d:3a:bc:f4"
+          echo =================================
+        fi
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: Вы не ввели новый MAC-адрес.${endc}" || echo -e "[*] ${rz}Error: You entered an invalid MAC-address.${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пример:${endc} sudo macney -on WiFi-AP ab:cd:ef:01:23:45" || echo -e "[*] ${yz}Example:${endc} sudo macney -on WiFi-AP ab:cd:ef:01:23:45"
+        echo =================================
+      fi
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: Вы не ввели имя сети или неверное имя сети.${endc}" || echo -e "[*] ${rz}Error: You entered an invalid network name.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пример:${endc} sudo macney -on WiFi-AP ab:cd:ef:01:23:45" || echo -e "[*] ${yz}Example:${endc} sudo macney -on WiFi-AP ab:cd:ef:01:23:45"
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    -off)
+    NAME="$2"
+    CHECKNAME=$(nmcli con show | egrep -w $NAME | awk '{print $1}')
+    if [[ "$NAME" == "$CHECKNAME" ]]; then
+      warning
+      # Проверяем активен ли интерфейс перед изменением MAC-адреса
+      IS_ACTIVE=$(nmcli con show --active 2>/dev/null | grep -q "^$NAME " && echo "true" || echo "false")
+      sudo nmcli con down $NAME 1>/dev/null 2>&1
+      if echo $NAME | egrep -w 'LAN|LAN[2-4]' 1>/dev/null 2>&1; then
+        sudo nmcli con mod $NAME ethernet.cloned-mac-address permanent 1>/dev/null 2>&1
+      else
+        sudo nmcli con mod $NAME wifi.cloned-mac-address permanent 1>/dev/null 2>&1
+      fi
+      # Поднимаем интерфейс только если он был активен до изменения MAC-адреса
+      if [[ "$IS_ACTIVE" == "true" ]]; then
+        sudo nmcli con up $NAME 1>/dev/null 2>&1
+      fi
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Имя: ${zsh}$NAME${endc}" || echo -e "[*] Name: ${zsh}$NAME${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Оригинальный MAC-адрес." || echo -e "[*] ${gz}Done:${endc} Original MAC-address."
+      echo =================================
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: Вы не ввели имя сети или неверное имя сети.${endc}" || echo -e "[*] ${rz}Error: You entered an invalid network name.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пример:${endc} sudo macney -off WiFi-AP" || echo -e "[*] ${yz}Example:${endc} sudo macney -off WiFi-AP"
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    -random)
+    NAME="$2"
+    CHECKNAME=$(nmcli con show | egrep -w $NAME | awk '{print $1}')
+    if [[ "$NAME" == "$CHECKNAME" ]]; then
+      warning
+      RANDOMMACADDRSS=$(hexdump -n 6 -ve '1/1 "%.2x "' /dev/random | awk -v a="2,6,a,e" -v r="$RANDOM" 'BEGIN{srand(r);}NR==1{split(a,b,",");r=int(rand()*4+1);printf "%s%s:%s:%s:%s:%s:%s\n",substr($1,0,1),b[r],$2,$3,$4,$5,$6}')
+      # Проверяем активен ли интерфейс перед изменением MAC-адреса
+      IS_ACTIVE=$(nmcli con show --active 2>/dev/null | grep -q "^$NAME " && echo "true" || echo "false")
+      sudo nmcli con down $NAME 1>/dev/null 2>&1
+      if echo $NAME | egrep -w 'LAN|LAN[2-4]' 1>/dev/null 2>&1 ; then
+        sudo nmcli con mod $NAME ethernet.cloned-mac-address $RANDOMMACADDRSS 1>/dev/null 2>&1
+      else
+        sudo nmcli con mod $NAME wifi.cloned-mac-address $RANDOMMACADDRSS 1>/dev/null 2>&1
+      fi
+      # Поднимаем интерфейс только если он был активен до изменения MAC-адреса
+      if [[ "$IS_ACTIVE" == "true" ]]; then
+        sudo nmcli con up $NAME 1>/dev/null 2>&1
+      fi
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Имя: ${zsh}$NAME${endc}" || echo -e "[*] Name: ${zsh}$NAME${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] MAC-адрес: ${zsh}$RANDOMMACADDRSS${endc}" || echo -e "[*] MAC-address: ${zsh}$RANDOMMACADDRSS${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Постоянный рандомный MAC-адрес." || echo -e "[*] ${gz}Done:${endc} Persistent random MAC-address."
+      echo =================================
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка:Вы не ввели имя сети или неверное имя сети.${endc}" || echo -e "[*] ${rz}Error: You entered an invalid network name.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пример:${endc} sudo macney -random WiFi-AP" || echo -e "[*] ${yz}Example:${endc} sudo macney -random WiFi-AP"
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    -autorandom)
+    NAME="$2"
+    CHECKNAME=$(nmcli con show | egrep -w $NAME | awk '{print $1}')
+    if [[ "$NAME" == "$CHECKNAME" ]]; then
+      warning
+      # Проверяем активен ли интерфейс перед изменением MAC-адреса
+      IS_ACTIVE=$(nmcli con show --active 2>/dev/null | grep -q "^$NAME " && echo "true" || echo "false")
+      sudo nmcli con down $NAME 1>/dev/null 2>&1
+      if echo $NAME | egrep -w 'LAN|LAN[2-4]' 1>/dev/null 2>&1 ; then
+        sudo nmcli con mod $NAME ethernet.cloned-mac-address random 1>/dev/null 2>&1
+      else
+        sudo nmcli con mod $NAME wifi.cloned-mac-address random 1>/dev/null 2>&1
+      fi
+      # Поднимаем интерфейс только если он был активен до изменения MAC-адреса
+      if [[ "$IS_ACTIVE" == "true" ]]; then
+        sudo nmcli con up $NAME 1>/dev/null 2>&1
+      fi
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Имя: ${zsh}$NAME${endc}" || echo -e "[*] Name: ${zsh}$NAME${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Авторандомный MAC-адрес активирован." || echo -e "[*] ${gz}Done:${endc} Autorandom MAC-address activated."
+      echo =================================
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: Вы не ввели имя сети или неверное имя сети.${endc}" || echo -e "[*] ${rz}Error: You entered an invalid network name.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пример:${endc} sudo macney -autorandom WiFi-AP" || echo -e "[*] ${yz}Example:${endc} sudo macney -autorandom WiFi-AP"
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    *)
+    if [ "$LANGUAGE" = "RU" ]; then
+cat << EOF
+[*] Использование: sudo macney [опции]
+[*] Опции:
+[*]  manager                - менеджер MAC-адрес
+[*]  -on [имя] [MAC-адрес]  - подменить ручной MAC-адрес
+[*]  -random [имя]          - подменить постоянный рандомный MAC-адрес
+[*]  -autorandom [имя]      - подменить авторандомный MAC-адрес
+[*]  -off [имя]             - вернуть оригинальный MAC-адрес
+[*]
+[*]    где [имя] - имя сети, например: WiFi-WLAN, WiFi-AP, LAN-IN.
+[*]    где [MAC-адрес] - вводить мак-адрес в таком формате: xx:xx:xx:xx:xx:xx
+[*]     символы - a, b, c, d, e, f, 0, 1, 2, 3, 4, 5, 6, 7, 9 (остальные буквы не бывают)
+[*]     очень важно: не должно быть 3 и более одинаковых символа в трех парах (слева) из шести пар.
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)
+EOF
+    else
+cat << EOF
+[*] Usage: sudo macney [options]
+[*] Options:
+[*]  manager                   - manager MAC-address
+[*]  -on [name] [MAC-address]  - replace manual MAC-address
+[*]  -random [name]            - replace permanent random MAC-address
+[*]  -autorandom [name]        - replace autorandom MAC-address
+[*]  -off [name]               - return original MAC-address
+[*]
+[*]    where [name] - WiFi-WLAN, WiFi-AP, LAN-IN.
+[*]    where [MAC-address] - enter mac-address in this format: xx:xx:xx:xx:xx:xx
+[*]     symbols - a, b, c, d, e, f, 0, 1, 2, 3, 4, 5, 6, 7, 9 (the other letters don't happen)
+[*]     very important: there must not be 3 or more identical characters in three pairs (left) out of six pairs.
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+EOF
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+esac

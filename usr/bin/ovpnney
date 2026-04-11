@@ -1,0 +1,861 @@
+#!/bin/bash
+export LASTCMD=$@
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+  echo -e ========='|'$bz' OVPNNey 5.0 '$endc'|'========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+sudo which openvpn 1>/dev/null ||
+{ echo -e [*] ''$yz'You must install OpenVPN.'$endc'' ; exit 1 ; }
+
+HOMENEY=/home/ney
+DIROVPN=/etc/openvpn
+HISTORY=/etc/history-vpn-proxy
+enterno() {
+  echo [*] "Верно (Y/n)? Да - любая клавиша. Нет - ввести n."
+  read -p "[*] Ответ: " choice
+  case "$choice" in
+      n|N) [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+      echo =================================
+      exit 1 ;;
+      *) shift ;;
+  esac
+}
+
+#for indicator (auto|rasndom)
+    TMP_SCRIPT=$(mktemp)
+    cat > $TMP_SCRIPT << 'EOF'
+#!/bin/bash
+f="$1"
+auto_conf=$(grep "AUTOSTART=" /etc/default/openvpn | cut -d'"' -f2)
+bz='\033[44;37m'
+endc='\033[0m'
+
+if [ "${f%.conf}" = "$auto_conf" ] && [ "${f%.conf}" != "all" ] && [ "$auto_conf" != "none" ]; then
+  echo -e "$f $bz(auto)$endc"
+elif [ "$auto_conf" = "all" ]; then
+  echo -e "$f $bz(auto-random)$endc"
+else
+  echo "$f"
+fi
+EOF
+    chmod +x $TMP_SCRIPT
+
+case $1 in
+    manager)
+bz='\033[44;37m' #'$bz'
+endc='\033[0m' #'$endc'
+    OVPN_STATUS=""
+    if ip link show 2>/dev/null | grep -qE "tun0|tap0"; then
+      OVPN_STATUS=$(
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] OpenVPN-клиент: ОНЛАЙН" || echo -e "[*] OpenVPN-client: ONLINE"
+ACTIVE_OVPN=$(sleep 1 && ps -aux | grep -a "/etc/openvpn --config" | awk '{print $20}' | sed 1q | cut -d/ -f4)
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] Активный конфиг: $ACTIVE_OVPN" || echo -e "[*] Active config: $ACTIVE_OVPN"
+      )
+    else
+      [ "$LANGUAGE" = "RU" ] && OVPN_STATUS="[*] OpenVPN-клиент: ОФФЛАЙН" || OVPN_STATUS="[*] OpenVPN-client: OFFLINE"
+    fi
+    
+    if [ "$LANGUAGE" = "RU" ]; then
+      FZF_HEADER="
+$OVPN_STATUS
+
+enter: подключить
+n: подключить новый конфиг
+u: обновить авторизацию сохраненного конфига
+s: остановить
+e: редактировать конфиг
+a: включить автоподключение
+r: включить автоподключение-рандом
+d: выключить автоподключение
+j: журнал подключения
+h: история подключений
+delete: удалить конфиг
+ctrl-i: импортировать все конфиги
+ctrl-e: экспортировать все конфиги
+ESC: выйти"
+      EXIT_MSG="Для выхода нажмите любую клавишу"
+      BORDER_LABEL="| Менеджер OpenVPN-клиент |"
+    else
+      FZF_HEADER="
+$OVPN_STATUS
+
+enter: connect
+n: connect new config
+u: update auth saved config
+s: stop
+e: edit config
+a: enable autostart
+r: enable autostart-random
+d: disable autostart
+j: show connection journal
+h: connection history
+delete: delete config
+ctrl-i: import all configs
+ctrl-e: export all configs
+ESC: exit"
+      EXIT_MSG="Press any key to exit"
+      BORDER_LABEL="| OpenVPN-client manager |"
+    fi
+
+    (ls $DIROVPN/*.conf 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r | xargs -I{} $TMP_SCRIPT {}) | fzf --ansi --style default  --preview 'cat -n /etc/openvpn/$(echo {} | cut -d" " -f1)' \
+      --header="$FZF_HEADER" \
+      --bind='n:execute(ovpnney -q start; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(ovpnney -q manager)' \
+      --bind='enter:execute(ovpnney -q con $(echo {} | cut -d" " -f1); echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(ovpnney -q manager)' \
+      --bind='s:execute-silent(sudo ovpnney stop && sleep 1)+become(ovpnney -q manager)' \
+      --bind='u:execute(ovpnney -q start $(echo {} | cut -d" " -f1); echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(ovpnney -q manager)' \
+      --bind='e:execute(sudo nano -l -m /etc/openvpn/$(echo {} | cut -d" " -f1))' \
+      --bind='e:+reload(ls /etc/openvpn/*.conf | cut -d/ -f4 | sort -r | xargs -I{} '$TMP_SCRIPT' {})' \
+      --bind='a:execute-silent(sudo ovpnney enable $(echo {} | cut -d" " -f1))' \
+      --bind='a:+reload(ls /etc/openvpn/*.conf | cut -d/ -f4 | sort -r | xargs -I{} '$TMP_SCRIPT' {})' \
+      --bind='r:execute-silent(sudo ovpnney random)' \
+      --bind='r:+reload(ls /etc/openvpn/*.conf | cut -d/ -f4 | sort -r | xargs -I{} '$TMP_SCRIPT' {})' \
+      --bind='d:execute-silent(sudo ovpnney disable)' \
+      --bind='d:+reload(ls /etc/openvpn/*.conf | cut -d/ -f4 | sort -r | xargs -I{} '$TMP_SCRIPT' {})' \
+      --bind='j:execute(ovpnney -q -j $(echo {} | cut -d" " -f1); echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(ovpnney -q manager)' \
+      --bind='h:execute(ovpnney -q history && sleep 2)+become(ovpnney -q manager)' \
+      --bind='delete:execute-silent(sudo ovpnney -rm $(echo {} | cut -d" " -f1))' \
+      --bind='delete:+reload(ls /etc/openvpn/*.conf | cut -d/ -f4 | sort -r | xargs -I{} '$TMP_SCRIPT' {})' \
+      --bind='ctrl-i:execute(sudo ovpnney -q import; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -t 2 -n 1 -s)+become(ovpnney -q manager)' \
+      --bind='ctrl-e:execute(sudo ovpnney -q export; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -t 2 -n 1 -s)+reload(ovpnney -q manager)' \
+      --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+      --height=65% --info=inline --margin=1 --padding=1
+    rm -f $TMP_SCRIPT
+    if ! $QUIET_MODE; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    start)
+    NAMEOVPN="$2" LOGINorASK_PASS="$3" PASSWORD="$4"
+
+    if [ -f "$HOMENEY/$NAMEOVPN" ]; then
+      if [[ "$NAMEOVPN" == *.ovpn ]]; then
+        base_name="${NAMEOVPN%.ovpn}"
+        sudo mv "$HOMENEY/$NAMEOVPN" "$HOMENEY/${base_name}.conf"
+        NAMEOVPN="${base_name}.conf"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Расширение файла переименовано из .ovpn в .conf" || echo -e "[*] ${gz}Done:${endc} File extension changed from .ovpn to .conf"
+      fi
+      ovpnbezconfinhome=$(sudo ls $NAMEOVPN | cut -d/ -f4 | sed 's/.conf$//')
+      sudo mv $ovpnbezconfinhome* $DIROVPN
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Файл конфига OpenVPN ${zsh}$NAMEOVPN${endc} уже перемещен в папку /etc/openvpn/" || echo -e "[*] ${gz}Done:${endc} OpenVPN config file ${zsh}$NAMEOVPN${endc} moved to /etc/openvpn/"
+      echo [*]
+    fi
+    TIME=28
+    if [ -n "$NAMEOVPN" ]; then
+      if [ ! -f "$DIROVPN/$NAMEOVPN" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка:Нет такого конфига OpenVPN в списке:${endc}" || echo -e "[*] ${rz}Error: No such OpenVPN config in list:${endc}"
+        sudo ls -1 $DIROVPN/*.conf | cut -d/ -f4
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Файл конфига OpenVPN: ${zsh}$NAMEOVPN${endc}" || echo -e "[*] OpenVPN config file: ${zsh}$NAMEOVPN${endc}"
+        fileconfigovpn=$DIROVPN/$NAMEOVPN
+        ovpnbezconf=$(sudo ls $DIROVPN/$NAMEOVPN | cut -d/ -f4 | sed 's/.conf$//')
+        filelogin=$DIROVPN/$ovpnbezconf.login
+        fileaskpass=$DIROVPN/$ovpnbezconf.askpass
+
+        if [ "$LANGUAGE" = "RU" ]; then
+          BORDER_LABEL="| Менеджер OpenVPN-клиент |"
+          INTERACTIVE=" [1]  Подключение без авторизации
+ [2]  С логином и паролем
+ [3]  С приватным ключом"
+        else
+          BORDER_LABEL="| OpenVPN-client manager |"
+          INTERACTIVE=" [1]  Connect without authentication
+ [2]  With login and password
+ [3]  With private key"
+        fi
+
+        # Если указан только конфиг без параметров авторизации, спрашиваем о способе подключения
+        if [ -z "$LOGINorASK_PASS" ]; then
+          CHOICE=$(echo "$INTERACTIVE" | fzf --ansi --pointer=">" \
+            --header="$NAMEOVPN" \
+            --bind 'enter:become(echo {})' \
+            --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+            --height=40% --info=inline --margin=1 --padding=1)
+          if [ -z "$CHOICE" ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+            echo =================================
+            exit 1
+          fi
+          case "$CHOICE" in
+            *"[1]"*)
+              # Подключение без авторизации
+              ;;              
+            *"[2]"*)
+              # Запрос логина и пароля
+              [ "$LANGUAGE" = "RU" ] && read -p "[*] Введите логин: " LOGINorASK_PASS || read -p "[*] Enter login: " LOGINorASK_PASS
+              [ "$LANGUAGE" = "RU" ] && read -p "[*] Введите пароль: " PASSWORD || read -p "[*] Enter password: " PASSWORD
+              echo [*]
+              if [ -z "$LOGINorASK_PASS" ] || [ -z "$PASSWORD" ]; then
+                [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация: Авторизация отменена${endc}" || echo -e "[*] ${rz}Information: Authorization canceled${endc}"
+                echo =================================
+                exit 1
+              fi
+              ;;              
+            *"[3]"*)
+              # Запрос приватного ключа
+              [ "$LANGUAGE" = "RU" ] && read -p "[*] Введите приватный ключ: " LOGINorASK_PASS || read -p "[*] Enter private key: " LOGINorASK_PASS
+              echo [*]
+              if [ -z "$LOGINorASK_PASS" ]; then
+                [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация: Ввод ключа отменен${endc}" || echo -e "[*] ${rz}Information: Key input canceled${endc}"
+                echo =================================
+                exit 1
+              fi
+              ;;              
+          esac
+        fi
+        if [ -n "$PASSWORD" ]; then
+          sudo touch $filelogin
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Юзернейм: ${zsh}$LOGINorASK_PASS${endc}" || echo -e "[*] Username: ${zsh}$LOGINorASK_PASS${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль: ${zsh}$PASSWORD${endc}" || echo -e "[*] Password: ${zsh}$PASSWORD${endc}"
+          #enterno
+cat > $filelogin <<EOF
+$LOGINorASK_PASS
+$PASSWORD
+EOF
+          sudo chmod 600 $filelogin
+          login_string=$(cat $fileconfigovpn | grep -c "auth-user-pass")
+          if [ $login_string -eq 0 ]; then
+            echo "auth-user-pass $filelogin" >> $fileconfigovpn
+            sed -i -e '/askpass/d' $fileconfigovpn
+          else
+            sed -i $fileconfigovpn -e '/auth-user-pass/c auth-user-pass '$filelogin''
+            sed -i -e '/askpass/d' $fileconfigovpn
+          fi
+
+        else
+          if [ -n "$LOGINorASK_PASS" ]; then
+            sudo touch $fileaskpass
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль приватного ключа: ${zsh}$LOGINorASK_PASS${endc}" || echo -e "[*] Private key password: ${zsh}$LOGINorASK_PASS${endc}"
+            #enterno
+cat > $fileaskpass <<EOF
+$LOGINorASK_PASS
+EOF
+            sudo chmod 600 $fileaskpass
+            askpass_string=$(cat $fileconfigovpn | grep -c "askpass")
+            if [ $askpass_string -eq 0 ]; then
+              echo "askpass $fileaskpass" >> $fileconfigovpn
+              sed -i -e '/auth-user-pass/d' $fileconfigovpn
+            else
+              sed -i $fileconfigovpn -e '/askpass/c askpass '$fileaskpass''
+              sed -i -e '/auth-user-pass/d' $fileconfigovpn
+            fi
+          else
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] Юзернейм/Пароль: ${zsh}N/A${endc}" || echo -e "[*] Username/Password: ${zsh}N/A${endc}"
+            #enterno
+            sed -i -e '/auth-user-pass/d' $fileconfigovpn
+            rm $filelogin 1>/dev/null 2>&1
+            sed -i -e '/askpass/d' $fileconfigovpn
+            rm $fileaskpass 1>/dev/null 2>&1
+          fi
+        fi
+
+        dns_string1=$(cat $fileconfigovpn | grep "script-security 2")
+        if [ -z "$dns_string1" ]; then
+          sed -i '$a\\' $fileconfigovpn
+          sed -i '$a\\' $fileconfigovpn
+          echo "script-security 2" >> $fileconfigovpn
+        else
+          sed -i '$a\\' $fileconfigovpn
+          sed -i '$a\\' $fileconfigovpn
+          sed -i $fileconfigovpn -e '/#script-security 2/c script-security 2'
+        fi
+        dnsconfig=$DIROVPN/update-resolv-conf
+        dns_string2=$(cat $fileconfigovpn | grep -c "up /etc/openvpn")
+        if [ $dns_string2 -eq 0 ]; then
+          echo "up $dnsconfig" >> $fileconfigovpn
+        else
+          sed -i $fileconfigovpn -e '/up \/etc\/openvpn/c up '$dnsconfig''
+        fi
+        dns_string3=$(cat $fileconfigovpn | grep -c "down /etc/openvpn")
+        if [ $dns_string3 -eq 0 ]; then
+          echo "down $dnsconfig" >> $fileconfigovpn
+        else
+          sed -i $fileconfigovpn -e '/down \/etc\/openvpn/c down '$dnsconfig''
+        fi
+
+        cipher_string=$(cat $fileconfigovpn | grep 'data-ciphers ')
+        if [ -z "$cipher_string" ]; then
+          cipher_string_shif=$(sudo cat $fileconfigovpn | grep '^cipher ' | awk '{print $2}')
+          sed -i '/cipher '$cipher_string_shif'/a data-ciphers '$cipher_string_shif'' $fileconfigovpn
+          sed -i '/data-ciphers '$cipher_string_shif'/a data-ciphers-fallback '$cipher_string_shif'' $fileconfigovpn
+        fi
+
+        sed -i $fileconfigovpn -e '/#tls-version-min 1.0/c tls-version-min 1.0'
+        sed -i $fileconfigovpn -e '/block-outside-dns/c push "block-outside-dns"'
+        sed -i $fileconfigovpn -e '/register-dns/c #register-dns'
+        sed -i $fileconfigovpn -e '/windows-driver/c #windows-driver'
+        sed -i $fileconfigovpn -e '/block-ipv6/c #block-ipv6'
+        sed -i $fileconfigovpn -e '/route-method exe/c #route-method exe'
+        sed -i 's/^data-ciphers/setenv opt data-ciphers/' $fileconfigovpn
+        sed -i 's/^data-ciphers-fallback/setenv opt data-ciphers-fallback/' $fileconfigovpn
+
+        checkipv6=$(sudo ifconfig | grep "inet6")
+        if [ -z "$checkipv6" ]; then
+          echo "pull-filter ignore \"ifconfig-ipv6 \"" >> $fileconfigovpn
+          echo "pull-filter ignore \"route-ipv6 \"" >> $fileconfigovpn
+        fi
+
+        ca_string=$DIROVPN/$ovpnbezconf.ca
+        if [ -f "$ca_string" ]; then
+          ca_check=$(cat $fileconfigovpn | grep -c "ca /etc/")
+          if [ $ca_check -eq 0 ]; then
+            echo "ca $ca_string" >> $fileconfigovpn
+          else
+            sed -i $fileconfigovpn -e '/ca \/etc/c ca '$ca_string''
+          fi
+        fi
+        cert_string=$DIROVPN/$ovpnbezconf.cert
+        if [ -f "$cert_string" ]; then
+          cert_check=$(cat $fileconfigovpn | grep -c "cert /etc/")
+          if [ $cert_check -eq 0 ]; then
+            echo "cert $cert_string" >> $fileconfigovpn
+          else
+            sed -i $fileconfigovpn -e '/cert \/etc/c cert '$cert_string''
+          fi
+        fi
+        crt_string=$DIROVPN/$ovpnbezconf.crt
+        if [ -f "$crt_string" ]; then
+          crt_check=$(cat $fileconfigovpn | grep -c "cert /etc/")
+          if [ $crt_check -eq 0 ]; then
+            echo "cert $crt_string" >> $fileconfigovpn
+          else
+            sed -i $fileconfigovpn -e '/cert \/etc/c cert '$crt_string''
+          fi
+        fi
+        key_string=$DIROVPN/$ovpnbezconf.key
+        if [ -f "$key_string" ]; then
+          key_check=$(cat $fileconfigovpn | grep -c "key /etc/")
+          if [ $key_check -eq 0 ]; then
+            echo "key $key_string" >> $fileconfigovpn
+          else
+            sed -i $fileconfigovpn -e '/key \/etc/c key '$key_string''
+          fi
+        fi
+
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Подключаемся к $ovpnbezconf." || echo -n "[*] Connecting to $ovpnbezconf."
+        sudo systemctl stop openvpn
+        sleep 1
+        sudo systemctl start openvpn@$ovpnbezconf
+        i=0
+        while [ $i -lt $TIME ];
+        do
+          sleep 1
+          echo -n "."
+          i=$(( $i + 1 ))
+          conovpn=$(ifconfig | egrep -o "tun|tap" | awk '{print $1}' | head -c-2)
+          if ! test -z "$conovpn" ; then
+            echo
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Подключено" || echo -e "[*] ${gz}Done:${endc} Connected"
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] Время: `date +%T` `date +%d-%m-%Y`" || echo -e "[*] Time: `date +%T` `date +%d-%m-%Y`"
+            echo -e "`date +%T`  `date +%d-%m-%Y`  VALID = ovpnney $LASTCMD" | sed 's/ -q//' >> $HISTORY/ovpnney-h
+            break
+          fi
+        done
+        if test -z "$conovpn" ; then
+          echo
+          sudo systemctl stop openvpn
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: не удалось подключиться к серверу по OpenVPN.${endc}" || echo -e "[*] ${rz}Information: failed to connect to the server by OpenVPN.${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Узнать причину в журнале событий конфига OpenVPN:${endc} sudo ovpnney -j $NAMEOVPN" || echo -e "[*] ${yz}Learn the reason in the OpenVPN config event log:${endc} sudo ovpnney -j $NAMEOVPN"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Отправьте скриншот журнала Neyу, если вы не разбираетесь в журнале${endc}" || echo -e "[*] ${yz}Send a screenshot of the Ney log if you don't understand the log${endc}"
+          echo -e "`date +%T`  `date +%d-%m-%Y`  NO VALID = ovpnney $LASTCMD" | sed 's/ -q//' >> $HISTORY/ovpnney-h
+        fi
+      fi
+      echo =================================
+    else
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: подключить новый конфиг
+ESC: выход"
+        BORDER_LABEL="| Менеджер OpenVPN-клиент |"
+      else
+        FZF_HEADER="
+enter: connect new config
+ESC: exit"
+        BORDER_LABEL="| OpenVPN-client manager |"
+      fi
+      NAMEOVPN=$(ls -l $HOMENEY/{*.ovpn,*.conf} 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r | fzf --ansi --style default --preview 'cat -n /home/ney/{}' \
+        --header="$FZF_HEADER" \
+        --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$NAMEOVPN" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 1
+      else
+        sudo ovpnney start $NAMEOVPN
+      fi
+    fi
+    shift
+    exit 1 ;;
+    con)
+    configovpn="$2"
+    TIME=28
+    if [ ! -f "$DIROVPN/$configovpn" ]; then
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: подключить конфиг
+ESC: выход"
+        BORDER_LABEL="| Менеджер OpenVPN-клиент |"
+      else
+        FZF_HEADER="
+enter: connect config
+ESC: exit"
+        BORDER_LABEL="| OpenVPN-client manager |"
+      fi
+      configovpn=$(ls -l $DIROVPN/*.conf 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r | fzf --ansi --style default --preview 'cat -n /etc/openvpn/{}' \
+        --header="$FZF_HEADER" \
+        --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$configovpn" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 1
+      fi
+      LASTCMD=$(echo $LASTCMD $configovpn | sed 's/ -q//')
+    fi
+    ovpnbezconf=$(sudo ls $DIROVPN/$configovpn | cut -d/ -f4 | sed 's/.conf$//')
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Файл конфига OpenVPN: ${zsh}$configovpn${endc}" || echo -e "[*] OpenVPN config file: ${zsh}$configovpn${endc}"
+    check_loginpass=$(grep "auth-user-pass" /etc/openvpn/$configovpn | awk '{print $2}')
+    if [ -f "$check_loginpass" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Юзернейм: ${zsh}$(sed -n 1p $check_loginpass)${endc}" || echo -e "[*] Username: ${zsh}$(sed -n 1p $check_loginpass)${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль: ${zsh}$(sed -n 2p $check_loginpass)${endc}" || echo -e "[*] Password: ${zsh}$(sed -n 2p $check_loginpass)${endc}"
+    else
+      check_askpass=$(grep "askpass" /etc/openvpn/$configovpn | awk '{print $2}')
+      if [ -f "$check_askpass" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль приватного ключа: ${zsh}$(sed -n 1p $check_askpass)${endc}" || echo -e "[*] Private key password: ${zsh}$(sed -n 1p $check_askpass)${endc}"
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Юзернейм/Пароль: ${zsh}N/A${endc}" || echo -e "[*] Username/Password: ${zsh}N/A${endc}"
+      fi
+    fi
+    echo [*]
+    [ "$LANGUAGE" = "RU" ] && echo -n "[*] Подключаемся к $ovpnbezconf." || echo -n "[*] Connecting to $ovpnbezconf."
+    sudo systemctl stop openvpn
+    sleep 1
+    sudo systemctl start openvpn@$ovpnbezconf
+    i=0
+    while [ $i -lt $TIME ];
+    do
+      sleep 1
+      echo -n "."
+      i=$(( $i + 1 ))
+      conovpn=$(ifconfig | egrep -o "tun|tap" | awk '{print $1}' | head -c-2)
+      if ! test -z "$conovpn" ; then
+        echo
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Подключено" || echo -e "[*] ${gz}Done:${endc} Connected"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Время: `date +%T` `date +%d-%m-%Y`" || echo -e "[*] Time: `date +%T` `date +%d-%m-%Y`"
+        echo -e "`date +%T`  `date +%d-%m-%Y`  VALID = ovpnney $LASTCMD" | sed 's/ -q//' >> $HISTORY/ovpnney-h
+        break
+      fi
+    done
+    if test -z "$conovpn" ; then
+      echo
+      sudo systemctl stop openvpn
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: Не удалось подключиться к серверу по OpenVPN.${endc}" || echo -e "[*] ${rz}Information: Failed to connect to the server by OpenVPN.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Узнать причину в журнале событий конфига OpenVPN:${endc} sudo ovpnney -j $configovpn" || echo -e "[*] ${yz}Learn the reason in the OpenVPN config event log:${endc} sudo ovpnney -j $configovpn"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Отправьте скриншот журнала Neyу, если вы не разбираетесь в журнале${endc}" || echo -e "[*] ${yz}Send a screenshot of the Ney log if you don't understand the log${endc}"
+      echo -e "`date +%T`  `date +%d-%m-%Y`  NO VALID = ovpnney $LASTCMD" | sed 's/ -q//' >> $HISTORY/ovpnney-h
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+    stop|-s)
+    sudo systemctl stop openvpn 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} OpenVPN отсоединен." || echo -e "[*] ${gz}Done:${endc} OpenVPN disconnected."
+    echo =================================
+    shift
+    exit 1 ;;
+    random)
+    sudo systemctl enable openvpn 1>/dev/null 2>&1
+    cat <<EOF> /etc/default/openvpn
+AUTOSTART="all"
+OPTARGS=""
+OMIT_SENDSIGS=0
+EOF
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Включен случайный выбор конфига OpenVPN при вкл малины." || echo -e "[*] ${gz}Done:${endc} Enabled random selection of OpenVPN config on boot."
+    echo =================================
+    shift
+    exit 1 ;;
+    enable)
+    NAMEOVPN="$2"
+    if [ ! -f "$DIROVPN/$NAMEOVPN" ]; then
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать конфиг для автоподключения
+r: включить автоподключение-рандом
+d: выключить автоподключение
+ESC: выход"
+        BORDER_LABEL="| Менеджер OpenVPN-клиент |"
+      else
+        FZF_HEADER="
+enter: select config for autoconnect
+r: enable auto-random
+d: disable auto
+ESC: exit"
+        BORDER_LABEL="| OpenVPN-client manager |"
+      fi
+      NAMEOVPN=$(ls -l $DIROVPN/*.conf 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r | xargs -I{} $TMP_SCRIPT {} | fzf --ansi --style default --preview 'cat -n /etc/openvpn/$(echo {} | cut -d" " -f1)' \
+        --header="$FZF_HEADER" \
+        --bind='enter:execute-silent(sudo ovpnney enable $(echo {} | cut -d" " -f1))' \
+        --bind='enter:+reload(ls /etc/openvpn/*.conf 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r | xargs -I{} '$TMP_SCRIPT' {})' \
+        --bind='r:execute-silent(sudo ovpnney random)' \
+        --bind='r:+reload(ls /etc/openvpn/*.conf 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r | xargs -I{} '$TMP_SCRIPT' {})' \
+        --bind='d:execute-silent(sudo ovpnney disable)' \
+        --bind='d:+reload(ls /etc/openvpn/*.conf 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r | xargs -I{} '$TMP_SCRIPT' {})' \
+        --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$NAMEOVPN" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 1
+      fi
+    fi
+    ovpnbezconf=$(echo "$NAMEOVPN" | cut -d/ -f4 | sed 's/.conf$//')
+cat <<EOF> /etc/default/openvpn
+AUTOSTART="$ovpnbezconf"
+OPTARGS=""
+OMIT_SENDSIGS=0
+EOF
+    sudo systemctl enable openvpn 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Конфиг OpenVPN ${zsh}$ovpnbezconf${endc} автоматически подключается при вкл малины." || echo -e "[*] ${gz}Done:${endc} OpenVPN config ${zsh}$ovpnbezconf${endc} is automatically connected when the Raspberry Pi is turned on."
+    rm -f $TMP_SCRIPT
+    echo =================================
+    shift
+    exit 1 ;;
+    disable)
+    sudo systemctl disable openvpn 1>/dev/null 2>&1
+cat <<EOF> /etc/default/openvpn
+AUTOSTART="none"
+OPTARGS=""
+OMIT_SENDSIGS=0
+EOF
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Отключено автоподключение OpenVPN при вкл малины." || echo -e "[*] ${gz}Done:${endc} OpenVPN autostart disabled."
+    echo =================================
+    shift
+    exit 1 ;;
+    -j)
+    configovpn="$2"
+    if [ ! -f "$DIROVPN/$configovpn" ]; then
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: показать журнал подключения
+ESC: выход"
+        BORDER_LABEL="| Менеджер OpenVPN-клиент |"
+      else
+        FZF_HEADER="
+enter: show connection journal
+ESC: exit"
+        BORDER_LABEL="| OpenVPN-client manager |"
+      fi
+      configovpn=$(ls $DIROVPN/*.conf 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r | fzf --ansi --style default --preview 'cat -n /etc/openvpn/{}' \
+        --header="$FZF_HEADER" \
+        --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$configovpn" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 1
+      fi
+    fi
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Файл конфига OpenVPN: ${zsh}$configovpn${endc}" || echo -e "[*] OpenVPN config file: ${zsh}$configovpn${endc}"
+    check_loginpass=$(grep "auth-user-pass" /etc/openvpn/$configovpn | awk '{print $2}')
+    if [ -f "$check_loginpass" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Юзернейм: ${zsh}$(sed -n 1p $check_loginpass)${endc}" || echo -e "[*] Username: ${zsh}$(sed -n 1p $check_loginpass)${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль: ${zsh}$(sed -n 2p $check_loginpass)${endc}" || echo -e "[*] Password: ${zsh}$(sed -n 2p $check_loginpass)${endc}"
+    else
+      check_askpass=$(grep "askpass" /etc/openvpn/$configovpn | awk '{print $2}')
+      if [ -f "$check_askpass" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль приватного ключа: ${zsh}$(sed -n 1p $check_askpass)${endc}" || echo -e "[*] Private key password: ${zsh}$(sed -n 1p $check_askpass)${endc}"
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Юзернейм/Пароль: ${zsh}N/A${endc}" || echo -e "[*] Username/Password: ${zsh}N/A${endc}"
+      fi
+    fi
+    echo [*]
+    sudo openvpn --config $DIROVPN/$configovpn
+    echo [*]
+    if ! $QUIET_MODE; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    -ls)
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${zsh}Список конфигов OpenVPN:${endc}" || echo -e "[*] ${zsh}OpenVPN config list:${endc}"
+    sudo ls -1 $DIROVPN/*.conf 2>/dev/null | rev | cut -d/ -f1 | rev
+    echo =================================
+    shift
+    exit 1 ;;
+    -mv)
+    NAMEOVPN="$2"
+    if [ ! -f "$HOMENEY/$NAMEOVPN" ]; then
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: переместить конфиг в /etc/openvpn
+ESC: выход"
+        BORDER_LABEL="| Менеджер OpenVPN-клиент |"
+      else
+        FZF_HEADER="
+enter: move config to /etc/openvpn
+ESC: exit"
+        BORDER_LABEL="| OpenVPN-client manager |"
+      fi
+      (ls -l $HOMENEY/{*.ovpn,*.conf} 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r) | fzf --ansi --style default --preview 'cat -n /home/ney/{}' \
+        --header="$FZF_HEADER" \
+        --bind='enter:execute-silent(sudo ovpnney -mv {})' \
+        --bind='enter:+reload(ls /home/ney/{*.ovpn,*.conf} 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r)' \
+        --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=40% --info=inline --margin=1 --padding=1
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+    else
+      if [[ "$NAMEOVPN" == *.ovpn ]]; then
+        base_name="${NAMEOVPN%.ovpn}"
+        sudo mv "$HOMENEY/$NAMEOVPN" "$HOMENEY/${base_name}.conf"
+        NAMEOVPN="${base_name}.conf"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Расширение файла переименовано из .ovpn в .conf" || echo -e "[*] ${gz}Done:${endc} File extension renamed from .ovpn to .conf"
+      fi
+      ovpnbezconf=$(sudo ls $NAMEOVPN | cut -d/ -f4 | sed 's/.conf$//')
+      sudo mv $ovpnbezconf* $DIROVPN/
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Файл конфига OpenVPN ${zsh}$NAMEOVPN${endc} уже перемещен в папку $DIROVPN" || echo -e "[*] ${gz}Done:${endc} OpenVPN config file ${zsh}$NAMEOVPN${endc} moved to directory $DIROVPN"
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+    -rm)
+    NAMEOVPN="$2"
+    if [ ! -f "$DIROVPN/$NAMEOVPN" ]; then
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: удалить конфиг
+a: удалить все конфиги
+ESC: выход"
+        BORDER_LABEL="| Менеджер OpenVPN-клиент |"
+      else
+        FZF_HEADER="
+enter: delete conf
+a: delete all confs
+ESC: exit"
+        BORDER_LABEL="| OpenVPN-client manager |"
+      fi
+      (ls $DIROVPN/*.conf 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r) | fzf --ansi --style default --preview 'cat -n /etc/openvpn/{}' \
+        --header="$FZF_HEADER" \
+        --bind='enter:execute-silent(sudo ovpnney -rm {})' \
+        --bind='enter:+reload(ls /etc/openvpn/*.conf 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r)' \
+        --bind='a:execute-silent(sudo ovpnney -rm-all)' \
+        --bind='a:+reload(ls /etc/openvpn/*.conf 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r)' \
+        --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=40% --info=inline --margin=1 --padding=1
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+    else
+      ovpnbezconf=$(sudo ls $DIROVPN/$NAMEOVPN | cut -d/ -f4 | sed 's/.conf$//')
+      sudo rm $DIROVPN/{"$NAMEOVPN","$ovpnbezconf.login","$ovpnbezconf.askpass","$ovpnbezconf.ca","$ovpnbezconf.cert","$ovpnbezconf.crt","$ovpnbezconf.key"} 1>/dev/null 2>&1
+      sudo rm /var/run/openvpn/$ovpnbezconf* 1>/dev/null 2>&1
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Удален конфиг OpenVPN: ${zsh}$NAMEOVPN${endc}" || echo -e "[*] ${gz}Done:${endc} OpenVPN config file ${zsh}$NAMEOVPN${endc} deleted"
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+    -rm-all)
+    sudo rm $DIROVPN/{*.conf,*.login,*.askpass,*.ca,*.cert,*.crt,*.key} 1>/dev/null 2>&1
+    sudo rm /var/run/openvpn/* 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Удалены все конфиги OpenVPN" || echo -e "[*] ${gz}Done:${endc} All OpenVPN config files deleted"
+    echo =================================
+    shift
+    exit 1 ;;
+    history)
+    if [ "$LANGUAGE" = "RU" ]; then
+      FZF_HEADER="
+enter: подключить
+a: очистить историю подключений
+ESC: выход"
+      BORDER_LABEL="| Менеджер OpenVPN-клиент |"
+    else
+      FZF_HEADER="
+enter: re-connect
+a: clear connection history
+ESC: exit"
+      BORDER_LABEL="| OpenVPN-client manager |"
+    fi
+    HISTORYOVPN=$(cat $HISTORY/ovpnney-h 2>/dev/null | sort -r -k2,2 | sed "s/NO VALID/$(echo -e "$rz")NO VALID$(echo -e "$endc")/g" | sed "s/  VALID/$(echo -e "$gz")  VALID$(echo -e "$endc")/g" | fzf --ansi \
+      --header="$FZF_HEADER" \
+      --bind='a:become(echo > /etc/history-vpn-proxy/ovpnney-h 1>/dev/null 2>&1)' \
+      --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+      --height=40% --info=inline --margin=1 --padding=1)
+    if [ -z "$HISTORYOVPN" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+      echo =================================
+      exit 1
+    fi
+    TUOVPN=$(echo "$HISTORYOVPN" | cut -d= -f2)
+    echo 'sudo'$TUOVPN''
+    sudo $TUOVPN
+    shift
+    exit 1
+    ;;
+    clear)
+    sudo sh -c "echo > $HISTORY/ovpnney-h 1>/dev/null 2>&1"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} История очищена." || echo -e "[*] ${gz}Done:${endc} History cleared."
+    echo =================================
+    shift
+    exit 1
+    ;;
+    import)
+    if [ ! "$(ls -A $HOMENEY/openvpn-backup/* 2>/dev/null)" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось найти папку openvpn-backup.${endc}" || echo -e "[*] ${rz}Error: failed to find openvpn-backup directory.${endc}"
+      echo =================================
+      exit 1
+    fi
+    sudo cp $HOMENEY/openvpn-backup/* /etc/openvpn 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Импорт выполнен." || echo -e "[*] ${gz}Done:${endc} Import completed."
+    echo =================================
+    shift
+    exit 1 ;;
+    export)
+    sudo mkdir -p $HOMENEY/openvpn-backup 1>/dev/null 2>&1
+    sudo cp $DIROVPN/{*.conf,*.login,*.askpass,*.ca,*.cert,*.crt,*.key} $HOMENEY/openvpn-backup 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Экспорт выполнен. Папка openvpn-backup в домашней папке." || echo -e "[*] ${gz}Done:${endc} Export completed. openvpn-backup directory in home directory."
+    echo =================================
+    shift
+    exit 1 ;;
+    *)
+    if [ "$LANGUAGE" = "RU" ]; then
+cat << EOF
+[*] Использование: sudo ovpnney [опции]
+[*] Опции:
+[*]  manager                          - менеджер OpenVPN-клиент
+[*]  start                            - подключить новый конфиг
+[*]  start [конфиг] [логин] [пароль]  - подключить новый конфиг с/без логином и паролем
+[*]  start [конфиг] [приват.ключ]     - подключить новый конфиг с приватным ключом
+[*]  con [конфиг]                     - подключить сохранённый конфиг (можно не ввести конфиг)
+[*]  stop                             - отсоединить
+[*]  random                           - включить случайный выбор конфига при вкл малины
+[*]  enable [конфиг]                  - включить автоподключение при вкл малины (можно не ввести конфиг)
+[*]  disable                          - отключить автоподключение при вкл малины
+[*]  -j [конфиг]                      - показать журнал подключения (можно не ввести конфиг)
+[*]  -ls                              - cписок конфигов
+[*]  -mv [конфиг]                     - переместить конфиг в /etc/openvpn (можно не ввести конфиг)
+[*]  -rm [конфиг]                     - удалить конфиг (можно не ввести конфиг)
+[*]  -rm-all                          - удалить все конфиги
+[*]  history                          - история подключений
+[*]  clear                            - очистить историю подключений
+[*]  import                           - импортировать все конфиги в /etc/openvpn
+[*]  export                           - экспортировать все конфиги в домашнюю папку
+[*]
+[*]   Как скинуть конфиг OpenVPN на малину:
+[*]   1. Удалить пробелы, скобки из имени файла, если есть.
+[*]   2. Скинуть конфиг на малину в домашнюю папку /home/pi
+[*]      через SFTP(есть в битваисе кнопка "New SFTP window" в левой колонне,
+[*]      а для MacOS бесплатая программа ForkLift) или SCP.
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)
+EOF
+    else
+cat << EOF
+[*] Usage: sudo ovpnney [options]
+[*] Options:
+[*]  manager                       - OpenVPN-client manager
+[*]  start                         - connect new config
+[*]  start [config] [user] [pass]  - connect new config with/without login and password
+[*]  start [config] [private-key]  - connect new config with private key
+[*]  con [config]                  - connect saved config (can don't have to enter config)
+[*]  stop                          - disconnect
+[*]  random                        - enable random selection of config on boot
+[*]  enable [config]               - enable autostart on boot (can don't have to enter config)
+[*]  disable                       - disable autostart on boot
+[*]  -j                            - show connection journal (can don't have to enter config)
+[*]  -ls                           - list configs
+[*]  -mv [config]                  - move config to /etc/openvpn (can don't have to enter config)
+[*]  -rm [config]                  - remove config (can don't have to enter config)
+[*]  -rm-all                       - remove all configs
+[*]  history                       - connection history
+[*]  clear                         - clear connection history
+[*]  import                        - import all configs to /etc/openvpn
+[*]  export                        - export all configs to home directory
+[*]
+[*]   How to send OpenVPN config to Raspberry Pi and start:
+[*]   1. Remove spaces, brackets from the config file name, if any.
+[*]   2. Send the config to the Raspberry Pi's home directory
+[*]      /home/pi through SFTP(there is a button "New SFTP window" in the left column in Bitvise,
+[*]      or a free program ForkLift for MacOS) or SCP.
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+EOF
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+esac

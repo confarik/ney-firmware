@@ -1,0 +1,420 @@
+#!/bin/bash
+export LASTCMD=$@
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+  echo -e ========='|'$bz' SSDNey 3.1 '$endc'|'=========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+ROUTEAP=br0
+PLUGINHOST=www.openstreetmap.org
+SS_PORT=12348
+LSERVER=$(ifconfig $ROUTEAP | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+DEFIP=$(ip route | grep '^default' | cut -d ' ' -f -5 | cut -d ' ' -f 2-)
+checkppp0vti0=$(ip route show | grep "default" | egrep -o -a "ppp0|ppp1|vti0")
+if [ -n "$checkppp0vti0" ]; then
+  interdef=$checkppp0vti0
+else
+  interdef=$(ip route show | grep "default" | awk '{print $5}' | sed 1q)
+fi
+HISTORY=/etc/history-vpn-proxy
+
+is_ip() {
+    local check_str=$1
+    [[ -z "$check_str" ]] && return 1
+    [[ $check_str =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]] && return 0
+    [[ $check_str == *"."* && $check_str != *" "* ]] && return 0
+    return 1
+}
+start_ssdney() {
+  sudo ip route add $SERVERIP $DEFIP
+  sudo mv /etc/resolv.conf /etc/resolv.conf_save 1>/dev/null 2>&1
+  sudo sh -c "echo nameserver 8.8.8.8 > /etc/resolv.conf" 1>/dev/null 2>&1
+  #sudo ln -sf /run/resolvconf/resolv.conf /etc/resolv.conf 1>/dev/null 2>&1
+  sudo ssdlocal -c $SSDNEY_CONF 1>/dev/null 2>&1 &
+  sleep 2
+  sudo tunssney --verbosity off --setup --proxy "socks5://$LSERVER:$SS_PORT" --dns-addr 1.1.1.1 --dns virtual --tun ss0 &
+  sleep 1
+}
+stop_ssdney() {
+  sudo killall ssdlocal 1>/dev/null 2>&1
+  sudo killall tunssney 1>/dev/null 2>&1
+  sudo rm -rf /tmp/ssdney 1>/dev/null 2>&1
+  DELSERVERIP=$(route -n | grep -E "UGH" | awk '{print $1}')
+  sudo ip route del $DELSERVERIP $DEFIP 1>/dev/null 2>&1
+  sleep 2
+  sudo ln -sf /run/resolvconf/resolv.conf /etc/resolv.conf
+}
+usage() {
+  if [ "$LANGUAGE" = "RU" ]; then
+cat << EOF
+[*] Использование: sudo ssdney [опции]
+[*] Опции:
+[*]  [метод] [IP] [порт] [пароль]                    - подключить Shadowsocks TUN
+[*]  [метод] [IP] [порт] [пароль] [плагин]           - подключить Shadowsocks TUN с плагином.
+[*]  [метод] [IP] [порт] [пароль] [плагин] -h [WWW]  - подключить Shadowsocks TUN с плагином с другим хостом WWW.
+[*]  -s, stop                                        - отсоединить Shadowsocks TUN
+[*]
+[*] [метод]: plain, none,
+[*]          aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305,
+[*]          2022-blake3-aes-128-gcm, 2022-blake3-aes-256-gcm,
+[*]          2022-blake3-chacha20-poly1305, 2022-blake3-chacha8-poly1305
+[*]
+[*] [плагин]: obfs-http, obfs-tls, cloak,
+[*]           v2ray, v2ray-tls, v2ray-quic, v2ray-grpc, v2ray-grpc-tls,
+[*]           xray, xray-tls, xray-quic, xray-grpc, xray-grpc-tls
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)
+=================================
+EOF
+  else
+cat << EOF
+[*] Usage: sudo ssdney [options]
+[*] Options:
+[*]  [METHOD] [IP] [PORT] [PASSWORD]                    - connect Shadowsocks TUN
+[*]  [METHOD] [IP] [PORT] [PASSWORD] [PLUGIN]           - connect Shadowsocks TUN with plugin.
+[*]  [METHOD] [IP] [PORT] [PASSWORD] [PLUGIN] -h [WWW]  - connect Shadowsocks TUN with plugin and different host WWW.
+[*]  -s, stop                                           - disconnect Shadowsocks TUN
+[*]
+[*] [METHOD]: plain, none,
+[*]           aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305,
+[*]           2022-blake3-aes-128-gcm, 2022-blake3-aes-256-gcm,
+[*]           2022-blake3-chacha20-poly1305, 2022-blake3-chacha8-poly1305
+[*]
+[*] [PLUGIN]: obfs-http, obfs-tls, cloak,
+[*]           v2ray, v2ray-tls, v2ray-quic, v2ray-grpc, v2ray-grpc-tls,
+[*]           xray, xray-tls, xray-quic, xray-grpc, xray-grpc-tls
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+=================================
+EOF
+  fi
+}
+[ "$#" = "0" ] && usage && exit 1
+while [ $# -gt 0 ]
+do
+option="$1"
+case $option in
+    plain|none|aes-128-gcm|aes-256-gcm|chacha20-ietf-poly1305|2022-blake3-aes-128-gcm|2022-blake3-aes-256-gcm|2022-blake3-chacha20-poly1305|2022-blake3-chacha8-poly1305)
+    METHOD=$option SERVERIP="$2" SERVERPORT="$3" SERVERPASS="$4" VULPLUGIN="$5"
+    if is_ip "$SERVERIP"; then
+      if [[ "$SERVERPORT" =~ ^[0-9]+$ ]] && [ "$SERVERPORT" -ge 1 ] && [ "$SERVERPORT" -le 65535 ]; then
+        sudo ip tuntap | egrep -o "wg0|wg1|tun0|tun1|tap0|tap1|ppp0|ppp1|vti0" 1>/dev/null 2>&1
+        if [ "$?" != "1" ]; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация: пожалуйста, сначала отсоединить VPN${endc}" || echo -e "[*] ${yz}Information: please disconnect VPN first${endc}"
+          echo =================================
+          exit 1 ;
+        fi
+        sudo ip tuntap | egrep -o "pr0" 1>/dev/null 2>&1
+        if [ "$?" != "1" ]; then
+          sudo bash -c "sudo proxydney -s" 1>/dev/null 2>&1
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Сейчас PROXYDNEY отсоединен..." || echo -e "[*] ${yz}Information:${endc} Now PROXYDNEY is disconnected..."
+          echo [*]
+          sleep 1
+        fi
+        sudo ip tuntap | egrep -o "ss0" 1>/dev/null 2>&1
+        if [ "$?" != "1" ]; then
+          stop_ssdney
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Рестарт...${endc}" || echo -e "[*] ${yz}Restart...${endc}"
+          echo [*]
+          sleep 1
+        fi
+        checkipt=$(sudo iptables -t nat -L PREROUTING | egrep -o "PROXYNEY|SSNEY")
+        sudo iptables -t nat -L $checkipt 1>/dev/null 2>&1
+        if [ -n "$checkipt" ]; then
+          echo [*]
+          sudo bash -c "sudo proxyney -s" 1>/dev/null 2>&1
+          sudo bash -c "sudo ssney -s" 1>/dev/null 2>&1
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Сейчас $checkipt отсоединен..." || echo -e "[*] ${yz}Information:${endc} Now $checkipt is disconnected..."
+          echo [*]
+        fi
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сервер IP/Host: ${zsh}$SERVERIP${endc}" || echo -e "[*] Server IP/Host: ${zsh}$SERVERIP${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Порт сервера: ${zsh}$SERVERPORT${endc}" || echo -e "[*] Server port: ${zsh}$SERVERPORT${endc}"
+        # Если SERVERIP - это доменное имя, преобразуем его в IP
+        if [[ ! $SERVERIP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          SERVER_IP_RESOLVED=$(host $SERVERIP | grep 'has address' | head -1 | awk '{print $4}')
+          if [ -n "$SERVER_IP_RESOLVED" ]; then
+            SERVERIP_ORIG=$SERVERIP
+            SERVERIP=$SERVER_IP_RESOLVED
+          fi
+        fi
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: Вы ввели неверный порт.${endc}" || echo -e "[*] ${rz}Error: Invalid port number.${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Число должно находиться в диапазоне от 1 до 65535." || echo -e "[*] ${yz}Information:${endc} The number must be between 1 and 65535."
+        echo =================================
+        exit 1;
+      fi
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: Вы ввели неверный IP-адрес или хост.${endc}" || echo -e "[*] ${rz}Error: Invalid IP address or host.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Введите корректный IP или хост." || echo -e "[*] ${yz}Information:${endc} Enter a valid IP or host."
+      echo =================================
+      exit 1;
+    fi
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль: ${zsh}$SERVERPASS${endc}" || echo -e "[*] Password: ${zsh}$SERVERPASS${endc}"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Метод: ${zsh}$METHOD${endc}" || echo -e "[*] Method: ${zsh}$METHOD${endc}"
+
+    # Проверяем, есть ли параметр -h в командной строке
+    MANUAL_PLUGINHOST=false
+    MANUAL_PLUGINHOST_VALUE=""
+    # Проверяем все аргументы на наличие -h
+    for arg in "$@"; do
+      if [ "$MANUAL_PLUGINHOST" = "true" ]; then
+        MANUAL_PLUGINHOST_VALUE="$arg"
+        PLUGINHOST="$MANUAL_PLUGINHOST_VALUE"
+        MANUAL_PLUGINHOST=false
+        break
+      fi
+      if [ "$arg" = "-h" ]; then
+        MANUAL_PLUGINHOST=true
+      fi
+    done
+    # Если нашли -h, но не нашли значение, выводим ошибку
+    if [ "$MANUAL_PLUGINHOST" = "true" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: после параметра -h требуется указать хост WWW.${endc}" || echo -e "[*] ${rz}Error: after parameter -h, the host WWW is required.${endc}"
+      echo =================================
+      exit 1
+    fi
+mode_str1='"mode": "tcp_and_udp",'
+if [[ "$VULPLUGIN" == "obfs-http" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}obfs-http${endc}" || echo -e "[*] Plugin: ${zsh}obfs-http${endc}"
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Хост WWW: ${zsh}$PLUGINHOST${endc}" || echo -e "[*] Host WWW: ${zsh}$PLUGINHOST${endc}"
+  plugin_str1='"plugin":"obfs-local",'
+  plugin_str2='"plugin_opts":"obfs=http;obfs-host='$PLUGINHOST'"'
+fi
+if [[ "$VULPLUGIN" == "obfs-tls" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}obfs-tls${endc}" || echo -e "[*] Plugin: ${zsh}obfs-tls${endc}"
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Хост WWW: ${zsh}$PLUGINHOST${endc}" || echo -e "[*] Host WWW: ${zsh}$PLUGINHOST${endc}"
+  plugin_str1='"plugin":"obfs-local",'
+  plugin_str2='"plugin_opts":"obfs=tls;host='$PLUGINHOST'"'
+fi
+#############cloak
+if [[ "$VULPLUGIN" == "cloak" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}cloak${endc}" || echo -e "[*] Plugin: ${zsh}cloak${endc}"
+  plugin_str1='"plugin":"/bin/ckclient",'
+  plugin_str2='"plugin_opts":"/etc/ck-client/config.json"'
+fi
+#############v2ray
+if [[ "$VULPLUGIN" == "v2ray" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}v2ray${endc}" || echo -e "[*] Plugin: ${zsh}v2ray${endc}"
+  plugin_str1='"plugin":"v2ray-plugin"'
+fi
+if [[ "$VULPLUGIN" == "v2ray-tls" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}v2ray-tls${endc}" || echo -e "[*] Plugin: ${zsh}v2ray-tls${endc}"
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Хост WWW: ${zsh}$PLUGINHOST${endc}" || echo -e "[*] Host WWW: ${zsh}$PLUGINHOST${endc}"
+  plugin_str1='"plugin":"v2ray-plugin",'
+  plugin_str2='"plugin_opts":"tls;host='$PLUGINHOST'"'
+fi
+if [[ "$VULPLUGIN" == "v2ray-quic" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}v2ray-quic${endc}" || echo -e "[*] Plugin: ${zsh}v2ray-quic${endc}"
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Хост WWW: ${zsh}$PLUGINHOST${endc}" || echo -e "[*] Host WWW: ${zsh}$PLUGINHOST${endc}"
+  mode_str1='"mode": "tcp_only",'
+  plugin_str1='"plugin":"v2ray-plugin",'
+  plugin_str2='"plugin_opts":"mode=quic;host='$PLUGINHOST'"'
+fi
+if [[ "$VULPLUGIN" == "v2ray-grpc" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}v2ray-grpc${endc}" || echo -e "[*] Plugin: ${zsh}v2ray-grpc${endc}"
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Хост WWW: ${zsh}$PLUGINHOST${endc}" || echo -e "[*] Host WWW: ${zsh}$PLUGINHOST${endc}"
+  plugin_str1='"plugin":"v2ray-plugin",'
+  plugin_str2='"plugin_opts":"mode=grpc"'
+fi
+if [[ "$VULPLUGIN" == "v2ray-grpc-tls" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}v2ray-grpc-tls${endc}" || echo -e "[*] Plugin: ${zsh}v2ray-grpc-tls${endc}"
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Хост WWW: ${zsh}$PLUGINHOST${endc}" || echo -e "[*] Host WWW: ${zsh}$PLUGINHOST${endc}"
+  plugin_str1='"plugin":"v2ray-plugin",'
+  plugin_str2='"plugin_opts":"tls;mode=grpc;host='$PLUGINHOST'"'
+fi
+#############xray
+if [[ "$VULPLUGIN" == "xray" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}xray${endc}" || echo -e "[*] Plugin: ${zsh}xray${endc}"
+  plugin_str1='"plugin":"xray-plugin"'
+fi
+if [[ "$VULPLUGIN" == "xray-tls" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}xray-tls${endc}" || echo -e "[*] Plugin: ${zsh}xray-tls${endc}"
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Хост WWW: ${zsh}$PLUGINHOST${endc}" || echo -e "[*] Host WWW: ${zsh}$PLUGINHOST${endc}"
+  plugin_str1='"plugin":"xray-plugin",'
+  plugin_str2='"plugin_opts":"tls;host='$PLUGINHOST'"'
+fi
+if [[ "$VULPLUGIN" == "xray-quic" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}xray-quic${endc}" || echo -e "[*] Plugin: ${zsh}xray-quic${endc}"
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Хост WWW: ${zsh}$PLUGINHOST${endc}" || echo -e "[*] Host WWW: ${zsh}$PLUGINHOST${endc}"
+  mode_str1='"mode": "tcp_only",'
+  plugin_str1='"plugin":"xray-plugin",'
+  plugin_str2='"plugin_opts":"mode=quic;host='$PLUGINHOST'"'
+fi
+if [[ "$VULPLUGIN" == "xray-grpc" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}xray-grpc${endc}" || echo -e "[*] Plugin: ${zsh}xray-grpc${endc}"
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Хост WWW: ${zsh}$PLUGINHOST${endc}" || echo -e "[*] Host WWW: ${zsh}$PLUGINHOST${endc}"
+  plugin_str1='"plugin":"xray-plugin",'
+  plugin_str2='"plugin_opts":"mode=grpc"'
+fi
+if [[ "$VULPLUGIN" == "xray-grpc-tls" ]]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Плагин: ${zsh}xray-grpc-tls${endc}" || echo -e "[*] Plugin: ${zsh}xray-grpc-tls${endc}"
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Хост WWW: ${zsh}$PLUGINHOST${endc}" || echo -e "[*] Host WWW: ${zsh}$PLUGINHOST${endc}"
+  plugin_str1='"plugin":"xray-plugin",'
+  plugin_str2='"plugin_opts":"tls;mode=grpc;host='$PLUGINHOST'"'
+fi
+
+    SSDNEY_PORT=$(expr $SERVERPORT + 1)
+    TMP=/tmp/ssdney ; mkdir -p $TMP
+    SSDNEY_CONF=$TMP/ssdney
+cat > $SSDNEY_CONF <<EOF
+{
+"locals": [
+        {
+            "protocol": "socks",
+            "local_address": "$LSERVER",
+            "local_port": $SS_PORT,
+            "mode": "tcp_and_udp",
+            "local_udp_address": "$LSERVER",
+            "local_udp_port": $SS_PORT,
+        }
+],
+"server": "$SERVERIP", "server_port": $SERVERPORT,
+"password": "$SERVERPASS",
+"method": "$METHOD",
+"ipv6_first": false,
+"ipv6_only": false,
+$mode_str1
+$plugin_str1
+$plugin_str2
+}
+EOF
+    start_ssdney
+    echo [*]
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Подключаемся к серверу по Shadowsocks ${skyz}(TUN)${endc}..." || echo -e "[*] Connecting to the server by Shadowsocks ${skyz}(TUN)${endc}..."
+    if curl --output /dev/null --silent --max-time 8 --interface ss0 --head --fail https://1.1.1.1 2>&1 || curl --output /dev/null --silent --max-time 8 --interface ss0 --head --fail https://8.8.8.8 2>&1 || curl --output /dev/null --silent --max-time 8 --interface ss0 --head --fail https://debian.org 2>&1 ; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Валид.${endc}" || echo -e "[*] ${gz}Valid.${endc}"
+    else
+      stop_ssdney
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Не валид.${endc}" || echo -e "[*] ${rz}Invalid.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: не удалось подключиться к серверу по Shadowsocks${endc} ${skyz}(TUN)${endc}." || echo -e "[*] ${rz}Information: failed to connect to the server by Shadowsocks${endc} ${skyz}(TUN)${endc}."
+      echo -e "`date +%T`  `date +%d-%m-%Y`  NO VALID = ssdney $LASTCMD" >> $HISTORY/ssney-h
+      echo =================================
+      exit 1
+    fi
+    sudo touch /tmp/ssdney/ssdney-online 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Подключен к серверу по Shadowsocks ${skyz}(TUN)${endc}." || echo -e "[*] ${gz}Done:${endc} Connected to the server by Shadowsocks ${skyz}(TUN)${endc}."
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Время: `date +%T` `date +%d-%m-%Y`" || echo -e "[*] Time: `date +%T` `date +%d-%m-%Y`"
+    echo -e "`date +%T`  `date +%d-%m-%Y`  VALID = ssdney $LASTCMD" >> $HISTORY/ssney-h
+    #echo [*] 'Остановить Shadowsocks - sudo ssdney -s'
+    echo =================================
+    shift 2
+    exit 1
+    ;;
+    -s|stop)
+    stop_ssdney
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Shadowsocks-клиент ${skyz}(TUN)${endc} отсоединен." || echo -e "[*] ${gz}Done:${endc} Shadowsocks-client ${skyz}(TUN)${endc} disconnected."
+    echo =================================
+    shift
+    exit 1
+    ;;
+ #   enable)
+ #   HISTORYSS=$(cat $HISTORY/ssney-h 2>/dev/null | sort -r | sed "s/NO ASN/$(echo -e "$yz")NO ASN$(echo -e "$endc")/g" | sed "s/NO AUTO DNS/$(echo -e "$yz")NO AUTO DNS$(echo -e "$endc")/g" | sed "s/NO VALID/$(echo -e "$rz")NO VALID$(echo -e "$endc")/g" | sed "s/  VALID/$(echo -e "$gz")  VALID$(echo -e "$endc")/g" | fzf \
+ #     --header=$'Press ENTER to select Shadowsocks for autoconnect or press ESC to exit\n\n' \
+ #     --layout=default --height=40% --info=inline --border --margin=1 --padding=1 --ansi)
+ #   if [ -z "$HISTORYSS" ]; then
+ #     echo -e [*] 'Exit.'
+ #     echo =================================
+ #     exit 1
+ #   fi
+ #   TUSS=$(echo "$HISTORYSS" | cut -d= -f2)
+ #   autossney=$(sudo cat /etc/rc.local | grep "sudo ss")
+ #   if [ -z "$autossney" ]; then
+ #     sudo sed -i -e '$i\sudo ss\n' /etc/rc.local
+ #     sudo sed -i /etc/rc.local -e "/sudo ss/c sudo$TUSS" 1>/dev/null 2>&1
+ #   else
+ #     sudo sed -i /etc/rc.local -e "/sudo ss/c sudo$TUSS" 1>/dev/null 2>&1
+ #   fi
+ #   echo -e [*] $gz'OK!'$endc
+ #   echo -e [*] 'Autostart Shadowsocks: '$zsh''enable''$endc''
+ #   echo =================================
+ #   shift
+ #   exit 1 ;;
+ #   disable)
+ #   #sudo sed -i '/sudo ss/s/^/#/' /etc/rc.local
+ #   sudo sed -i /etc/rc.local -e "/sudo ss/c #sudo ssney" 1>/dev/null 2>&1
+ #   echo -e [*] $gz'OK!'$endc
+ #   echo -e [*] 'Autostart Shadowsocks: '$zsh''disable''$endc''
+ #   echo =================================
+ #   shift
+ #   exit 1 ;;
+    *) usage
+    shift
+    exit 1
+    ;;
+esac
+done
+exit 0;

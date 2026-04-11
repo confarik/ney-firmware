@@ -1,0 +1,850 @@
+#!/bin/bash
+
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e =========='|'$bz' IPNey 4.1 '$endc'|'=========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+CHECKSITE=https://ipapi.co/json/
+laninout() {
+  eth0=LAN
+  eth1=LAN2
+  eth2=LAN3
+  eth3=LAN4
+  eval NAME=\$$INTERFACE
+  CHECK_NAMEOUT=$(nmcli con show | grep -w $NAME-OUT | awk '{print $1}')
+  if [ -n "$CHECK_NAMEOUT" ]; then
+    sudo nmcli con down $NAME-OUT 1>/dev/null 2>&1
+    sudo nmcli con del $NAME-OUT 1>/dev/null 2>&1
+  fi
+  CHECK_NAMEIN=$(nmcli con show | grep -w $NAME-IN | awk '{print $1}')
+  if [ -n "$CHECK_NAMEIN" ]; then
+    sudo nmcli con down $NAME-IN 1>/dev/null 2>&1
+    sudo nmcli con del $NAME-IN 1>/dev/null 2>&1
+  fi
+}
+case $1 in
+    manager)
+    while true; do
+      NAMEBR=Br0
+      LSERVER=$(nmcli con show $NAMEBR | grep "ipv4.addresses:" | awk '{print $2}' | cut -d/ -f1)
+
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать
+ESC: выход
+      Настройка сети:"
+      BORDER_LABEL="| Менеджер сети |"
+      INTERACTIVE=" [1]  Локальный IPv4 Linux Ney: $LSERVER
+ [2]  Имя хоста: $HOSTNAME"
+      else
+        FZF_HEADER="
+enter: select
+ESC: exit
+      Setting network:"
+      BORDER_LABEL="| Network manager |"
+      INTERACTIVE=" [1]  Local IPv4 Linux Ney: $LSERVER
+ [2]  Hostname: $HOSTNAME"
+      fi
+
+      CHOICE=$(echo "$INTERACTIVE" | fzf --ansi --pointer=">" \
+          --header="$FZF_HEADER" \
+          --bind 'enter:become(echo {})' \
+          --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+          --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$CHOICE" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 0
+      fi
+      case "$CHOICE" in             
+        *"[1]"*)
+          sudo ipney -q lip
+          ;;
+        *"[2]"*)
+          sudo ipney -q hostname
+          ;;
+      esac
+    done
+    shift
+    exit 0 ;;
+    ip)
+    SERVERIP="$2"
+    curl --max-time 10 https://ipapi.co/$SERVERIP/json/;echo
+    echo =================================
+    shift
+    exit 1 ;;
+    http)
+    SERVERIP="$2" SERVERPORT="$3"
+    curl --max-time 10 --proxy $SERVERIP:$SERVERPORT $CHECKSITE;echo
+    echo =================================
+    shift
+    exit 1 ;;
+    http+)
+    SERVERIP="$2" SERVERPORT="$3" SERVERLOGIN="$4" SERVERPASS="$5"
+    curl --max-time 10 --proxy $SERVERIP:$SERVERPORT -U $SERVERLOGIN:$SERVERPASS $CHECKSITE;echo
+    echo =================================
+    shift
+    exit 1 ;;
+    socks4)
+    SERVERIP="$2" SERVERPORT="$3"
+    curl --max-time 10 --socks4 $SERVERIP:$SERVERPORT $CHECKSITE;echo
+    echo =================================
+    shift
+    exit 1 ;;
+    socks4a)
+    SERVERIP="$2" SERVERPORT="$3"
+    curl --max-time 10 --socks4a $SERVERIP:$SERVERPORT $CHECKSITE;echo
+    echo =================================
+    shift
+    exit 1 ;;
+    socks5)
+    SERVERIP="$2" SERVERPORT="$3"
+    curl --max-time 10 --socks5 $SERVERIP:$SERVERPORT $CHECKSITE;echo
+    echo =================================
+    shift
+    exit 1 ;;
+    socks5+)
+    SERVERIP="$2" SERVERPORT="$3" SERVERLOGIN="$4" SERVERPASS="$5"
+    curl --max-time 10 --socks5 $SERVERIP:$SERVERPORT -U $SERVERLOGIN:$SERVERPASS $CHECKSITE;echo
+    echo =================================
+    shift
+    exit 1 ;;
+    ipv6-manager)
+    # Создаем временный файл для хранения информации об интерфейсах
+    TEMP_FILE=$(mktemp)
+    
+    # Функция для обновления данных о IPv6 статусах
+    update_ipv6_data() {
+      local temp_data=$(mktemp)
+      local output_file=$(mktemp)
+      
+      # Получаем список нужных сетей
+      nmcli -t -f NAME con show | grep -E '^(WiFi-WLAN|LAN-IN|LAN2-IN|LAN3-IN|LAN4-IN|Br0|Br1)$' > $temp_data
+      
+      # Форматируем список с актуальными данными
+      while read -r name; do
+        # Получаем имя интерфейса
+        interface=$(nmcli -p con show "$name" | grep -E 'connection\.interface-name:' | awk '{print $2}')
+        if [ -z "$interface" ]; then
+          interface=$(nmcli -p con show "$name" | grep -E 'GENERAL\.DEVICES:' | awk '{print $2}')
+        fi
+        
+        if [ -n "$interface" ]; then
+          # Получаем статус IPv6
+          ipv6_method=$(nmcli -p con show "$name" | grep "ipv6.method:" | awk '{print $2}')
+          
+          # Определяем статус IPv6
+          if [[ "$ipv6_method" == "auto" ]]; then
+            status="$gz(ON)$endc"
+          else
+            status="$rz(OFF)$endc"
+          fi
+          
+          # Проверяем активен ли интерфейс
+          if nmcli con show --active 2>/dev/null | grep -q "^$name "; then
+            conn_status="$gz●$endc"
+          else
+            conn_status="$rz●$endc"
+          fi
+          
+          # Получаем группу для мостов
+          group=""
+          if [[ "$name" == "Br0" ]]; then
+            br_group=$(nmcli -t -f NAME con show | grep -E '^(WiFi-AP|LAN-OUT|LAN2-OUT|LAN3-OUT|LAN4-OUT)$' | tr '\n' ', ')
+            if [ -n "$br_group" ]; then
+              group=" [${br_group%,}]"
+            fi
+          elif [[ "$name" == "Br1" ]]; then
+            br_group=$(nmcli -t -f NAME con show | grep -E '^(WiFi-AP2)$' | tr '\n' ', ')
+            if [ -n "$br_group" ]; then
+              group=" [${br_group%,}]"
+            fi
+          fi
+          
+          # Форматируем вывод
+          if [[ "$name" == "Br0" || "$name" == "Br1" ]]; then
+            echo -e "$conn_status | $name ($interface) ->$group - IPv6: $status" >> $output_file
+          else
+            echo -e "$conn_status | $name ($interface) - IPv6: $status" >> $output_file
+          fi
+        fi
+      done < $temp_data
+      
+      # Удаляем временный файл с данными
+      rm -f $temp_data
+      
+      # Возвращаем путь к файлу с обновленными данными
+      echo $output_file
+    }
+    
+    # Получаем актуальную информацию о IPv6 статусах
+    FORMATTED_FILE=$(update_ipv6_data)
+    
+    if [ -s $FORMATTED_FILE ]; then
+
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: ВКЛ/ВЫКЛ IPv6
+ESC: выход"
+        BORDER_LABEL="| Менеджер IPv6 |"
+      else
+        FZF_HEADER="
+enter: ON/OFF IPv6
+ESC: exit"
+        BORDER_LABEL="| IPv6 manager |"
+      fi    
+      
+      SELECTED_LINE=$(cat $FORMATTED_FILE | fzf --ansi --style default \
+        --header="$FZF_HEADER" \
+        --bind='enter:execute(conn=$(echo {} | cut -d" " -f3); sudo ipney -q ipv6-toggle $conn && sleep 1)+reload(temp_data=$(mktemp); nmcli -t -f NAME con show | grep -E "^(WiFi-WLAN|LAN-IN|LAN2-IN|LAN3-IN|LAN4-IN|Br0|Br1)$" > $temp_data; output_file=$(mktemp); while read -r name; do interface=$(nmcli -p con show "$name" | grep -E "connection\.interface-name:" | awk "{print \$2}"); if [ -z "$interface" ]; then interface=$(nmcli -p con show "$name" | grep -E "GENERAL\.DEVICES:" | awk "{print \$2}"); fi; if [ -n "$interface" ]; then ipv6_method=$(nmcli -p con show "$name" | grep "ipv6.method:" | awk "{print \$2}"); if [[ "$ipv6_method" == "auto" ]]; then status="\033[1;32m(ON)\033[0m"; else status="\033[1;31m(OFF)\033[0m"; fi; if nmcli con show --active 2>/dev/null | grep -q "^$name "; then conn_status="\033[1;32m●\033[0m"; else conn_status="\033[1;31m●\033[0m"; fi; group=""; if [[ "$name" == "Br0" ]]; then br_group=$(nmcli -t -f NAME con show | grep -E "^(WiFi-AP|LAN-OUT|LAN2-OUT|LAN3-OUT|LAN4-OUT)$" | tr "\\n" ", "); if [ -n "$br_group" ]; then group=" [${br_group%,}]"; fi; elif [[ "$name" == "Br1" ]]; then br_group=$(nmcli -t -f NAME con show | grep -E "^(WiFi-AP2)$" | tr "\\n" ", "); if [ -n "$br_group" ]; then group=" [${br_group%,}]"; fi; fi; if [[ "$name" == "Br0" || "$name" == "Br1" ]]; then
+              echo -e "$conn_status | $name ($interface) ->$group - IPv6: $status" >> $output_file
+            else
+              echo -e "$conn_status | $name ($interface) - IPv6: $status" >> $output_file
+            fi; fi; done < $temp_data; rm -f $temp_data; cat $output_file; rm -f $output_file)' \
+        --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=20% --info=inline --margin=1 --padding=1)
+
+      rm $TEMP_FILE $FORMATTED_FILE
+      if [ -z "$SELECTED_LINE" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 1
+      fi
+    fi
+    shift
+    exit 1 ;;
+    ipv6-toggle)
+    NAME="$2"
+    CHECKNAME=$(nmcli con show | egrep -w $NAME | awk '{print $1}')
+    if [[ "$NAME" == "$CHECKNAME" ]]; then
+      # Проверяем текущий метод IPv6
+      ipv6_method=$(nmcli -p con show "$NAME" | grep "ipv6.method:" | awk '{print $2}')
+      
+      if [[ "$ipv6_method" == "auto" ]]; then
+        # Если IPv6 включен, выключаем его
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${blink}Подождите...${endc}" || echo -e "[*] ${blink}Wait...${endc}"
+        sudo nmcli con down $NAME 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME ipv6.method disabled 1>/dev/null 2>&1
+        sudo nmcli con up $NAME 1>/dev/null 2>&1
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] $Название: ${zsh}$NAME${endc}" || echo -e "[*] Name: ${zsh}$NAME${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] IPv6: ${rz}OFF${endc}" || echo -e "[*] IPv6: ${rz}OFF${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+      else
+        # Если IPv6 выключен, включаем его
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${blink}Подождите...${endc}" || echo -e "[*] ${blink}Wait...${endc}"
+        sudo nmcli con down $NAME 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME ipv6.method auto 1>/dev/null 2>&1
+        sudo nmcli con up $NAME 1>/dev/null 2>&1
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] $Название: ${zsh}$NAME${endc}" || echo -e "[*] Name: ${zsh}$NAME${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] IPv6: ${gz}ON${endc}" || echo -e "[*] IPv6: ${gz}ON${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+      fi
+      echo =================================
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Ошибка: Вы не ввели имя сети или неверное имя сети.${endc}" || echo -e "[*] ${yz}Error: You did not enter a network name or an invalid network name.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пример:${endc} sudo ipney ipv6-toggle WiFi-AP" || echo -e "[*] ${yz}Example:${endc} sudo ipney ipv6-toggle WiFi-AP"
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    hostname)
+    NEWHOSTNAME="$2"
+    if [ -n "$NEWHOSTNAME" ]; then
+      if [[ "$NEWHOSTNAME" =~ ^[a-zA-Z0-9-]+$ ]]; then
+        sudo hostnamectl set-hostname $NEWHOSTNAME && sudo sed -i /etc/hosts -e '/127.0.1.1/c 127.0.1.1       '$NEWHOSTNAME'' 1>/dev/null 2>&1
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Новый хостнейм: ${zsh}$NEWHOSTNAME${endc}" || echo -e "[*] New hostname: ${zsh}$NEWHOSTNAME${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} ${yz}После перезагрузки хостнейм изменен.${endc}" || echo -e "[*] ${gz}Done:${endc} ${yz}After reboot, the hostname will be changed.${endc}"
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: хостнейм содержит недопустимые символы.${endc}" || echo -e "[*] ${rz}Error: hostname contains invalid characters.${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Используйте только английские буквы, цифры и дефисы.${endc}" || echo -e "[*] ${yz}Use only English letters, numbers, and hyphens.${endc}"
+        echo =================================
+        exit 1
+      fi
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Текущий хостнейм: ${zsh}$HOSTNAME${endc}" || echo -e "[*] Current hostname: ${zsh}$HOSTNAME${endc}"
+      # Цикл для запроса хостнейма до получения корректного значения
+      VALID_HOSTNAME=false
+      while [ "$VALID_HOSTNAME" != "true" ]; do
+        echo -e "[*]"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Введите новое имя хоста (английские буквы, цифры и дефисы)" || echo -e "[*] Enter a new hostname (english letters, numbers, and hyphens)"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*]   или оставьте пустым для сохранения текущего:" || echo -e "[*]   or leave empty to save the current hostname:"
+        [ "$LANGUAGE" = "RU" ] && echo -e -n "[*]$zsh хостнейм: $endc" || echo -e -n "[*]$zsh hostname: $endc"
+        read -e NEWHOSTNAME
+  
+        # Если пользователь не ввел новый хостнейм, используем текущий
+        if [ -z "$NEWHOSTNAME" ]; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сохраняем текущий хостнейм: ${zsh}$HOSTNAME${endc}" || echo -e "[*] Saving current hostname: ${zsh}$HOSTNAME${endc}"
+          echo =================================
+          exit 1
+        fi
+        # Проверяем хостнейм на корректность (только буквы, цифры и дефисы)
+        if [[ "$NEWHOSTNAME" =~ ^[a-zA-Z0-9-]+$ ]]; then
+          VALID_HOSTNAME=true
+        else
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: хостнейм содержит недопустимые символы.${endc}" || echo -e "[*] ${rz}Error: hostname contains invalid characters.${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Попробуйте еще раз." || echo -e "[*] Try again."
+        fi
+      done
+      # Применяем новый хостнейм, когда он корректный
+      sudo ipney -q hostname $NEWHOSTNAME
+    fi
+    if ! $QUIET_MODE; then
+    echo =================================
+    fi
+    shift
+    exit 1 ;;
+    localip|lip|local)
+    LOCALIP="$2"
+    NAMEBR=Br0
+    LSERVER=$(nmcli con show $NAMEBR | grep "ipv4.addresses:" | awk '{print $2}' | cut -d. -f1,2,3)
+    CURRENT_IP=$(nmcli con show $NAMEBR | grep "ipv4.addresses:" | awk '{print $2}' | cut -d/ -f1)
+    
+    # Функция для проверки IP-адреса на валидность
+    check_ip_valid() {
+      local IP=$1
+      # Проверка на соответствие формату IPv4
+      if [[ $IP =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; then
+        local OCT1=$(echo $IP | cut -d. -f1)
+        local OCT2=$(echo $IP | cut -d. -f2)
+        local IP_PREFIX=$(echo $IP | cut -d. -f1,2,3)
+        
+        # Проверка что IP является локальным (частным)
+        if [[ $OCT1 -eq 10 ]] || 
+           [[ $OCT1 -eq 172 && $OCT2 -ge 16 && $OCT2 -le 31 ]] || 
+           [[ $OCT1 -eq 192 && $OCT2 -eq 168 ]]; then
+          
+          # Проверка что подсеть не занята
+          if [[ $LSERVER == "$IP_PREFIX" ]] || [[ 192.168.60 == "$IP_PREFIX" ]]; then
+            echo "reserved"
+            return 1
+          else
+            echo "valid"
+            return 0
+          fi
+        else
+          echo "not_local"
+          return 3
+        fi
+      else
+        echo "invalid"
+        return 2
+      fi
+    }
+    
+    # Если IP был передан как аргумент
+    if [ -n "$LOCALIP" ]; then
+      RESULT=$(check_ip_valid "$LOCALIP")
+      if [ "$RESULT" = "valid" ]; then
+        LOCALIPBEZ=$(echo $LOCALIP | cut -d. -f1,2,3)
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Локальный IPv4: ${zsh}$LOCALIPBEZ.1${endc}" || echo -e "[*] Local IPv4: ${zsh}$LOCALIPBEZ.1${endc}"
+        sudo nmcli con down $NAMEBR 1>/dev/null 2>&1
+        sudo nmcli con mod $NAMEBR ipv4.address $LOCALIPBEZ.1/24 1>/dev/null 2>&1
+        sudo nmcli con up $NAMEBR 1>/dev/null 2>&1
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Локальный IPv4 изменен." || echo -e "[*] ${gz}Done:${endc} Local IPv4 changed."
+      elif [ "$RESULT" = "reserved" ]; then
+        LOCALIPBEZ=$(echo $LOCALIP | cut -d. -f1,2,3)
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация:${endc} Нельзя изменить на этот локальный IPv4 '$LOCALIPBEZ.1. Занят!" || echo -e "[*] ${rz}Information:${endc} Cannot change to this local IPv4 '$LOCALIPBEZ.1. Reserved!"
+      elif [ "$RESULT" = "not_local" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация:${endc} Вы ввели публичный IP. Необходимо использовать локальный IPv4-адрес." || echo -e "[*] ${rz}Information:${endc} You entered a public IP. You must use a local IPv4 address."
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Используйте адреса из диапазонов:${endc}"
+        echo -e "[*] ${yz}     1) 192.168.*.*${endc}"
+        echo -e "[*] ${yz}     2) 10.*.*.*${endc}"
+        echo -e "[*] ${yz}     3) 172.[16-31].*.*${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}     (где * - 0-254)${endc}" || echo -e "[*] ${yz}     (where * - 0-254)${endc}"
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка:${endc} Вы ввели неверный локальный IPv4." || echo -e "[*] ${rz}Error:${endc} You entered an invalid local IPv4."
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Каждое число должно находиться в диапазоне от 0 до 254.${endc}" || echo -e "[*] ${yz}Each number must be between 0 and 254.${endc}"
+      fi
+    else
+      # Интерактивный режим, запрашиваем IP у пользователя
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Текущий локальный IPv4: ${zsh}$CURRENT_IP${endc}" || echo -e "[*] Current local IPv4: ${zsh}$CURRENT_IP${endc}"
+      # Цикл для запроса IP до получения корректного значения
+      VALID_IP=false
+      while [ "$VALID_IP" != "true" ]; do
+        echo -e "[*]"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Введите новый локальный IPv4 (например 192.168.150.1)" || echo -e "[*] Enter a new local IPv4 (e.g., 192.168.150.1)"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*]   или оставьте пустым для сохранения текущего:" || echo -e "[*]   or leave empty to save the current:"
+        [ "$LANGUAGE" = "RU" ] && echo -e -n "[*] ${zsh}локальный IPv4:${endc} " || echo -e -n "[*] ${zsh}local IPv4:${endc} "
+        read -e NEW_IP
+        # Если пользователь не ввел новый IP, сохраняем текущий
+        if [ -z "$NEW_IP" ]; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сохраняем текущий локальный IPv4: ${zsh}$CURRENT_IP${endc}" || echo -e "[*] Saving current local IPv4: ${zsh}$CURRENT_IP${endc}"
+          echo =================================
+          exit 1
+        fi
+        # Проверка корректности IP
+        RESULT=$(check_ip_valid "$NEW_IP")
+        if [ "$RESULT" = "valid" ]; then
+          LOCALIPBEZ=$(echo $NEW_IP | cut -d. -f1,2,3)
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Новый локальный IP: ${zsh}$LOCALIPBEZ.1${endc}" || echo -e "[*] New local IP: ${zsh}$LOCALIPBEZ.1${endc}"
+          VALID_IP=true
+          LOCALIP=$NEW_IP
+        elif [ "$RESULT" = "reserved" ]; then
+          LOCALIPBEZ=$(echo $NEW_IP | cut -d. -f1,2,3)
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: Нельзя изменить на этот локальный IP '$LOCALIPBEZ.1. Занят!${endc}" || echo -e "[*] ${rz}Information: Cannot change to this local IP '$LOCALIPBEZ.1. Reserved!${endc}"
+          echo -e "[*] Попробуйте другой IP-адрес."
+        elif [ "$RESULT" = "not_local" ]; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: Вы ввели публичный IP. Необходимо использовать локальный IP-адрес.${endc}" || echo -e "[*] ${rz}Information: You entered a public IP. You must use a local IP address.${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Используйте адреса из диапазонов:${endc}" || echo -e "[*] ${yz}Use addresses from ranges:${endc}"
+          echo -e "[*] ${yz}     1) 192.168.*.*${endc}"
+          echo -e "[*] ${yz}     2) 10.*.*.*${endc}"
+          echo -e "[*] ${yz}     3) 172.[16-31].*.*${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}     (где * - 0-254)${endc}" || echo -e "[*] ${yz}     (where * - 0-254)${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Попробуйте еще раз." || echo -e "[*] Try again."
+        else
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: Вы ввели неверный локальный IP.${endc}" || echo -e "[*] ${rz}Information: You entered an invalid local IP.${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Каждое число должно находиться в диапазоне от 0 до 254.${endc}" || echo -e "[*] ${yz}Each number must be between 0 and 254.${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Попробуйте еще раз." || echo -e "[*] Try again."
+        fi
+      done
+      # Применяем новый IP, когда он корректный
+      sudo ipney lip $LOCALIP
+    fi
+    if ! $QUIET_MODE; then
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    lan-out)
+    INTERFACE="$2"
+    if [[ "$INTERFACE" == eth0 ]] || [[ "$INTERFACE" == eth1 ]] || [[ "$INTERFACE" == eth2 ]] || [[ "$INTERFACE" == eth3 ]]; then
+      if [[ "$INTERFACE" =~ ^eth[0-9]+$ ]]; then
+        ETH_IP=$(ip -4 addr show "$INTERFACE" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | grep -v '^169\.254\.' | head -n1)
+        if [ -n "$ETH_IP" ]; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}ВНИМАНИЕ: Интерфейс $INTERFACE имеет IP-адрес ($ETH_IP). Это может означать, что малина подключена к роутеру. Продолжение может привести к разрыву соединения с роутером.${endc}" || echo -e "[*] ${yz}WARNING: Interface $INTERFACE has an IP address ($ETH_IP). This may indicate it is connected to a router. Continuing may disconnect you from the router.${endc}"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Вы уверены, что хотите продолжить?${endc}" || echo -e "[*] ${yz}Are you sure you want to continue?${endc}"
+          [ "$LANGUAGE" = "RU" ] && read -p "[*] Принять/Отклонить [y/N]: " answer
+          [ "$LANGUAGE" = "EN" ] && read -p "[*] Accept/Reject [y/N]: " answer
+          [[ "$answer" =~ ^[Yy]$ ]] && RESPONSE=0 || RESPONSE=1
+          if [ $RESPONSE -ne 0 ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Операция отклонена.${endc}" || echo -e "[*] ${yz}Operation rejected.${endc}"
+            echo =================================
+            exit 1
+          fi
+        fi
+      fi
+      laninout
+      sudo nmcli con add con-name $NAME-OUT ifname $INTERFACE type ethernet slave-type bridge master 'Br0' 1>/dev/null 2>&1
+      sudo nmcli con mod $NAME-OUT ipv6.method disabled 1>/dev/null 2>&1
+      sudo nmcli con show | grep -wc "$NAME-OUT" 1>/dev/null 2>&1 && sudo nmcli con down $NAME-OUT 1>/dev/null 2>&1
+      sleep 1
+      sudo nmcli con show | grep -wc "$NAME-OUT" 1>/dev/null 2>&1 && sudo nmcli con up $NAME-OUT 1>/dev/null 2>&1
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} LAN-порт / USB-LAN ($INTERFACE) - OUT (выход)." || echo -e "[*] ${gz}Done:${endc} LAN-port / USB-LAN ($INTERFACE) - OUT."
+      echo =================================
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: Вы не ввели сетевой интерфейс.${endc}" || echo -e "[*] ${rz}Information: You did not enter a network interface.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пример:${endc} sudo ipney lan-out eth0" || echo -e "[*] ${yz}Example:${endc} sudo ipney lan-out eth0"
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    lan-in)
+    INTERFACE="$2"
+    if [[ "$INTERFACE" == eth0 ]] || [[ "$INTERFACE" == eth1 ]] || [[ "$INTERFACE" == eth2 ]] || [[ "$INTERFACE" == eth3 ]]; then
+      laninout
+      sudo nmcli con add con-name $NAME-IN ifname $INTERFACE type ethernet 1>/dev/null 2>&1
+      sudo nmcli con mod $NAME-IN ipv6.method disabled 1>/dev/null 2>&1
+      sudo nmcli con show | grep -wc "$NAME-IN" 1>/dev/null 2>&1 && sudo nmcli con down $NAME-IN 1>/dev/null 2>&1
+      sleep 1
+      sudo nmcli con show | grep -wc "$NAME-IN" 1>/dev/null 2>&1 && sudo nmcli con up $NAME-IN 1>/dev/null 2>&1
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} LAN-порт / USB-LAN ($INTERFACE) - IN (вход)." || echo -e "[*] ${gz}Done:${endc} LAN-port / USB-LAN ($INTERFACE) - IN."
+      echo =================================
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: Вы не ввели сетевой интерфейс.${endc}" || echo -e "[*] ${rz}Information: You did not enter a network interface.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пример:${endc} sudo ipney lan-in eth0" || echo -e "[*] ${yz}Example:${endc} sudo ipney lan-in eth0"
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    killon)
+    checkipt=$(sudo iptables -t nat -L PREROUTING | egrep -o "PROXYNEY|SSHNEY|SSNEY")
+    sudo iptables -t nat -L $checkipt 1>/dev/null 2>&1
+    if [ -n "$checkipt" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo "[*] Настройка килл-свич VPN/Proxy" || echo -e "[*] Kill-Switch VPN/Proxy configuration"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Пожалуйста, сначала отсоединить $checkipt" || echo -e "[*] ${yz}Information:${endc} Please disconnect $checkipt"
+      echo =================================
+      exit 1 ;
+    fi
+    resultkillswitch=$(iptables -nvL | egrep -o "tun+|tap+|vti0|ppp0|ppp1|wg0|wg1|pr0|ss0|ssh0" | wc -l)
+    if [ $resultkillswitch -eq 0 ]; then
+      # Разрешаем loopback и внутренний трафик
+      iptables -A INPUT -i lo -j ACCEPT
+      iptables -A OUTPUT -o lo -j ACCEPT
+      
+      # Разрешаем установленные соединения для INPUT
+      iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+      
+      # Разрешаем трафик на VPN/прокси интерфейсах
+      iptables -A INPUT -i tun+ -j ACCEPT
+      iptables -A INPUT -i tap+ -j ACCEPT
+      iptables -A INPUT -i vti0 -j ACCEPT
+      iptables -A INPUT -i ppp0 -j ACCEPT
+      iptables -A INPUT -i ppp1 -j ACCEPT
+      iptables -A INPUT -i wg0 -j ACCEPT
+      iptables -A INPUT -i wg1 -j ACCEPT
+      iptables -A INPUT -i pr0 -j ACCEPT
+      iptables -A INPUT -i ss0 -j ACCEPT
+      iptables -A INPUT -i ssh0 -j ACCEPT
+      
+      # Разрешаем трафик от LAN-интерфейсов
+      iptables -A INPUT -i br+ -j ACCEPT
+      iptables -A OUTPUT -o br+ -j ACCEPT
+      
+      # Самое простое решение: разрешаем весь исходящий трафик через физические интерфейсы
+      # Это позволит работать любым VPN-соединениям с любыми портами
+      # После установки соединения, весь трафик будет идти через VPN-туннель
+      iptables -A OUTPUT -o eth+ -j ACCEPT
+      iptables -A OUTPUT -o wlan+ -j ACCEPT
+      
+      # Определяем порт SSH из конфигурационного файла
+      SSH_PORT="22"  # По умолчанию, если не найдем в конфиге
+      if [ -f /etc/ssh/sshd_config ]; then
+        # Пробуем найти порт в файле конфигурации SSH
+        FOUND_PORT=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config | awk '{print $2}' | tail -n 1)
+        # Если нашли порт, используем его
+        if [ -n "$FOUND_PORT" ]; then
+          SSH_PORT="$FOUND_PORT"
+        fi
+      fi
+      
+      # Разрешаем входящие SSH/SFTP-соединения на найденном порту
+      iptables -A INPUT -p tcp --dport $SSH_PORT -j ACCEPT
+      iptables -A OUTPUT -p tcp --dport $SSH_PORT -j ACCEPT
+
+      # Специальные правила для разных типов VPN - разрешаем входящие и исходящие соединения
+      
+      # PPTP (протокол GRE и TCP порт 1723)
+      iptables -A INPUT -p gre -j ACCEPT
+      iptables -A OUTPUT -p gre -j ACCEPT
+      iptables -A INPUT -p tcp --dport 1723 -j ACCEPT
+      iptables -A OUTPUT -p tcp --dport 1723 -j ACCEPT
+      
+      # SSTP (TCP порт 443 - HTTPS)
+      iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+      iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT
+      
+      # L2TP (UDP порт 1701) и L2TP/IPsec
+      iptables -A INPUT -p udp --dport 1701 -j ACCEPT
+      iptables -A OUTPUT -p udp --dport 1701 -j ACCEPT
+      
+      # IKEv2 и L2TP/IPsec (общие правила)
+      # IKE (UDP порт 500)
+      iptables -A INPUT -p udp --dport 500 -j ACCEPT
+      iptables -A OUTPUT -p udp --dport 500 -j ACCEPT
+      # NAT-T (UDP порт 4500)
+      iptables -A INPUT -p udp --dport 4500 -j ACCEPT
+      iptables -A OUTPUT -p udp --dport 4500 -j ACCEPT
+      # ESP протокол (IP протокол 50) и AH протокол (IP протокол 51)
+      iptables -A INPUT -p esp -j ACCEPT
+      iptables -A OUTPUT -p esp -j ACCEPT
+      iptables -A INPUT -p 51 -j ACCEPT
+      iptables -A OUTPUT -p 51 -j ACCEPT
+
+      # Правило допускает трафик UDP 1701 для L2TP, но только тогда, когда оно является частью соединения, защищенного IPSEC. Политика -m и флаги IPSEC -Pol гарантируют, что только трафик, защищенный IPSec, может использовать этот порт, добавляя дополнительный уровень безопасности.
+      iptables -A INPUT -p udp -m policy --dir in --pol ipsec -m udp --dport 1701 -j ACCEPT
+      
+      # Разрешаем DNS-запросы (для разрешения имен VPN-серверов)
+      iptables -A INPUT -p udp --dport 53 -j ACCEPT
+      iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+      iptables -A INPUT -p tcp --dport 53 -j ACCEPT
+      iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+      
+      # Разрешаем необходимый исходящий трафик ТОЛЬКО через VPN/прокси
+      iptables -A OUTPUT -o tun+ -j ACCEPT
+      iptables -A OUTPUT -o tap+ -j ACCEPT
+      iptables -A OUTPUT -o vti0 -j ACCEPT
+      iptables -A OUTPUT -o ppp0 -j ACCEPT
+      iptables -A OUTPUT -o ppp1 -j ACCEPT
+      iptables -A OUTPUT -o wg0 -j ACCEPT
+      iptables -A OUTPUT -o wg1 -j ACCEPT
+      iptables -A OUTPUT -o pr0 -j ACCEPT
+      iptables -A OUTPUT -o ss0 -j ACCEPT
+      iptables -A OUTPUT -o ssh0 -j ACCEPT
+      
+      # Разрешаем исходящий трафик ESTABLISHED,RELATED
+      iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+      
+      # Правила FORWARD - разрешаем трафик между VPN и LAN
+      iptables -A FORWARD -i tun+ -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT
+      iptables -A FORWARD -i br+ -o tun+ -j ACCEPT
+      iptables -A FORWARD -i tap+ -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT
+      iptables -A FORWARD -i br+ -o tap+ -j ACCEPT
+      iptables -A FORWARD -i vti0 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT
+      iptables -A FORWARD -i br+ -o vti0 -j ACCEPT
+      iptables -A FORWARD -i ppp0 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT
+      iptables -A FORWARD -i br+ -o ppp0 -j ACCEPT
+      iptables -A FORWARD -i ppp1 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT
+      iptables -A FORWARD -i br+ -o ppp1 -j ACCEPT
+      iptables -A FORWARD -i wg0 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT
+      iptables -A FORWARD -i br+ -o wg0 -j ACCEPT
+      iptables -A FORWARD -i wg1 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT
+      iptables -A FORWARD -i br+ -o wg1 -j ACCEPT
+      iptables -A FORWARD -i pr0 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT
+      iptables -A FORWARD -i br+ -o pr0 -j ACCEPT
+      iptables -A FORWARD -i ss0 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT
+      iptables -A FORWARD -i br+ -o ss0 -j ACCEPT
+      iptables -A FORWARD -i ssh0 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT
+      iptables -A FORWARD -i br+ -o ssh0 -j ACCEPT
+      
+      # Устанавливаем политики по умолчанию - блокируем всё остальное
+      iptables -P INPUT DROP
+      iptables -P FORWARD DROP
+      iptables -P OUTPUT DROP
+      
+      # Защита IPv6 - блокируем весь трафик IPv6
+      ip6tables -P INPUT DROP 2>/dev/null
+      ip6tables -P FORWARD DROP 2>/dev/null
+      ip6tables -P OUTPUT DROP 2>/dev/null
+      
+      # Сохраняем правила
+      sh -c "iptables-save > /etc/iptables.ipv4" 1>/dev/null 2>&1
+      
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Килл-свич VPN/Proxy активирован." || echo -e "[*] ${gz}Done:${endc} Kill-Switch VPN/Proxy activated."
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Килл-свич VPN/Proxy на данном моменте активирован." || echo -e "[*] ${yz}Information:${endc} Kill-Switch VPN/Proxy is already active."
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+    killoff)
+    checkipt=$(sudo iptables -t nat -L PREROUTING | egrep -o "PROXYNEY|SSHNEY|SSNEY")
+    sudo iptables -t nat -L $checkipt 1>/dev/null 2>&1
+    if [ -n "$checkipt" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo "[*] Настройка килл-свич VPN/Proxy" || echo -e "[*] Kill-Switch VPN/Proxy configuration"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Пожалуйста, сначала отсоединить $checkipt" || echo -e "[*] ${yz}Information:${endc} Please disconnect $checkipt"
+      echo =================================
+      exit 1 ;
+    fi
+    
+    resultkillswitch=$(iptables -nvL | egrep -o "tun+|tap+|vti0|ppp0|ppp1|wg0|wg1|pr0|ss0|ssh0" | wc -l)
+    if [ $resultkillswitch -eq 40 ]; then
+      # Если нет резервной копии, удаляем правила вручную
+      # Очищаем правила
+      iptables -F INPUT
+      iptables -F OUTPUT
+      iptables -F FORWARD
+      
+      # Удаляем конкретные правила FORWARD, если они еще существуют
+      iptables -D FORWARD -i tun+ -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i br+ -o tun+ -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i tap+ -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i br+ -o tap+ -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i vti0 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i br+ -o vti0 -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i ppp0 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i br+ -o ppp0 -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i ppp1 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i br+ -o ppp1 -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i wg0 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i br+ -o wg0 -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i wg1 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i br+ -o wg1 -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i pr0 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i br+ -o pr0 -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i ss0 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i br+ -o ss0 -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i ssh0 -o br+ -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+      iptables -D FORWARD -i br+ -o ssh0 -j ACCEPT 2>/dev/null
+      
+      # Устанавливаем политики по умолчанию в ACCEPT
+      iptables -P INPUT ACCEPT
+      iptables -P FORWARD ACCEPT
+      iptables -P OUTPUT ACCEPT
+      
+      # Вращаем политики IPv6 в ACCEPT
+      ip6tables -P INPUT ACCEPT 2>/dev/null
+      ip6tables -P FORWARD ACCEPT 2>/dev/null
+      ip6tables -P OUTPUT ACCEPT 2>/dev/null
+      
+      # Восстанавливаем важные правила MASQUERADE и TTL
+      iptables -t nat -A POSTROUTING -j MASQUERADE 2>/dev/null
+      iptables -t mangle -A PREROUTING -i br0 -j TTL --ttl-set 65 2>/dev/null
+      iptables -t mangle -A PREROUTING -i br1 -j TTL --ttl-set 65 2>/dev/null
+      
+      # Добавляем правило PPTP helper, если необходимо
+      iptables -t raw -A PREROUTING -p tcp -m tcp --dport 1723 -j CT --helper pptp 2>/dev/null
+
+      sh -c "iptables-save > /etc/iptables.ipv4" 1>/dev/null 2>&1
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Килл-свич VPN/Proxy деактивирован." || echo -e "[*] ${gz}Done:${endc} Kill-Switch VPN/Proxy deactivated."
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Запрет трафика при обрыве VPN/Proxy на данном моменте деактивирован." || echo -e "[*] ${yz}Information:${endc} Traffic blocking on VPN/Proxy loss is already disabled."
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+    st)
+    curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python -
+    echo =================================
+    shift
+    exit 1 ;;
+    api)
+    API="$2"
+    cat > /etc/ipney_api <<EOF
+$API
+EOF
+    sudo chmod 600 /etc/ipney_api
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+    echo =================================
+    shift
+    exit 1 ;;
+    checkip|cip)
+    CHECK_IP="$2"
+    API=$(sudo cat /etc/ipney_api)
+    if [ -z "$API" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация: пожалуйста, ввести API для IPQualityScore.${endc}" || echo -e "[*] ${yz}Information: please enter API for IPQualityScore.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пример:${endc} sudo ipney api [API]" || echo -e "[*] ${yz}Example:${endc} sudo ipney api [API]"
+    else
+      curl --max-time 10 https://ipqualityscore.com/api/json/ip/$API/$CHECK_IP/;echo
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+    email|em)
+    CHECK_EMAIL="$2"
+    API=$(sudo cat /etc/ipney_api)
+    if [ -z "$API" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация: пожалуйста, ввести API для IPQualityScore.${endc}" || echo -e "[*] ${yz}Information: please enter API for IPQualityScore.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Пример:${endc} sudo ipney api [API]" || echo -e "[*] ${yz}Example:${endc} sudo ipney api [API]"
+    else
+      curl --max-time 10 https://www.ipqualityscore.com/api/json/email/$API?email=$CHECK_EMAIL/;echo
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+    *)
+    if [ "$LANGUAGE" = "RU" ]; then
+cat << EOF
+[*] Использование: sudo ipney [опции]
+[*] Опции:
+[*]  manager                                 - менеджер сети
+[*]  ip                                      - мой IP
+[*]  ip [IP]                                 - другой IP/DNS
+[*]  http [IP] [порт]                        - проверить HTTP/S
+[*]  http+ [IP] [порт] [логин] [пароль]      - проверить HTTP/S с авторизацией
+[*]  socks4 [IP] [порт]                      - проверить SOCKS4
+[*]  socks4a [IP] [порт]                     - проверить SOCKS4a
+[*]  socks5 [IP] [порт]                      - проверить SOCKS5
+[*]  socks5+ [IP] [порт] [логин] [пароль]    - проверить SOCKS5 с авторизацией
+[*]  ipv6-manager                            - менеджер IPv6
+[*]  ipv6-toggle [NAME]                      - ВКЛ/ВЫКЛ IPv6
+[*]  hostname [NAME]                         - изменить хостнейм
+[*]  lip [IP]                                - изменить локальный IPv4 Linux Ney
+[*]  lan-out [INTERFACE]                     - LAN-порт / USB-LAN - OUT (выход)
+[*]  lan-in [INTERFACE]                      - LAN-порт / USB-LAN/модем - IN (вход)
+[*]  killon                                  - активировать Килл-свич VPN/Proxy
+[*]  killoff                                 - деактивировать Килл-свич VPN/Proxy
+[*]  st                                      - тест скорости интернета (Speedtest)
+[*]  api [API]                               - ввести API для IPQualityScore
+[*]  cip [IP]                                - проверить IP (через IPQualityScore)
+[*]  email [EMAIL]                           - проверить репутацию email (через IPQualityScore)
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+EOF
+    else
+cat << EOF
+[*] Usage: sudo ipney [options]
+[*] Options:
+[*]  manager                                 - network manager
+[*]  ip                                      - my ip
+[*]  ip [IP]                                 - other IP/DNS
+[*]  http [IP] [PORT]                        - check HTTP/S
+[*]  http+ [IP] [PORT] [LOGIN] [PASSWORD]    - check HTTP/S with Auth
+[*]  socks4 [IP] [PORT]                      - check SOCKS4
+[*]  socks4a [IP] [PORT]                     - check SOCKS4a
+[*]  socks5 [IP] [PORT]                      - check SOCKS5
+[*]  socks5+ [IP] [PORT] [LOGIN] [PASSWORD]  - check SOCKS5 with Auth
+[*]  ipv6-manager                            - manager IPv6
+[*]  ipv6-toggle [NAME]                      - On/Off IPv6
+[*]  hostname [NAME]                         - change hostname
+[*]  lip [IP]                                - change local IP of the Raspberry Pi
+[*]  lan-out [INTERFACE]                     - LAN-port / USB-LAN - OUT (exit)
+[*]  lan-in [INTERFACE]                      - LAN-port / USB-LAN/modem - IN (enter)
+[*]  killon                                  - activate Kill-Switch VPN/Proxy
+[*]  killoff                                 - deactivate Kill-Switch VPN/Proxy
+[*]  st                                      - test internet speed (Speedtest)
+[*]  api [API]                               - enter API for IPQualityScore
+[*]  cip [IP]                                - check IP (via IPQualityScore)
+[*]  email [EMAIL]                           - check email reputation (via IPQualityScore)
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+EOF
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+esac

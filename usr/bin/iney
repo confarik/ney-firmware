@@ -1,0 +1,375 @@
+#!/bin/bash
+
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+# Проверка наличия параметров командной строки
+AUTO_MODE=false
+INTERVAL=3
+
+# Обработка параметров командной строки
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -a|--auto)
+      AUTO_MODE=true
+      shift # переход к следующему параметру
+      # Если после -a указан интервал
+      if [[ $1 =~ ^[0-9]+$ ]]; then
+        INTERVAL=$1
+        shift
+      fi
+      ;;
+    *) # неизвестный параметр
+      shift
+      ;;
+  esac
+done
+
+# Функции для режима автообновления
+check_keypress() {
+  # Сохраняем текущие настройки терминала
+  saved_settings=$(stty -g)
+  
+  # Устанавливаем терминал в неканонический режим и отключаем эхо
+  stty -icanon -echo min 0 time 0
+  
+  # Проверяем, есть ли символ для чтения
+  key=$(dd bs=1 count=1 2>/dev/null)
+  
+  # Восстанавливаем настройки терминала
+  stty "$saved_settings"
+  
+  # Возвращаем результат (пусто - нет нажатия, непусто - есть нажатие)
+  [ -n "$key" ] && return 0 || return 1
+}
+
+# Функция очистки для режима автообновления
+auto_cleanup() {
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+  rm -f "$TMP_SCRIPT"
+  exit 0
+}
+
+# Запуск в режиме автообновления
+run_auto_mode() {
+  # Создаем временный скрипт для отображения информации
+  TMP_SCRIPT="/tmp/iney-temp.sh"
+  if [ "$LANGUAGE" = "RU" ]; then
+    cat > "$TMP_SCRIPT" << EOF
+#!/bin/bash
+infoney
+echo =================================
+echo -e "\033[2;37m[*] Автообновление активно\033[0m"
+echo -e "\033[2;37m[*] Для выхода нажмите любую клавишу\033[0m"
+EOF
+  else
+    cat > "$TMP_SCRIPT" << EOF
+#!/bin/bash
+infoney
+echo =================================
+echo -e "\033[2;37m[*] Auto-update active\033[0m"
+echo -e "\033[2;37m[*] To exit, press any key\033[0m"
+EOF
+  fi
+  chmod +x "$TMP_SCRIPT"
+  
+  # Устанавливаем обработчик сигналов
+  trap auto_cleanup SIGINT SIGTERM
+  
+  # Основной цикл обновления
+  while true; do
+    clear
+    "$TMP_SCRIPT"
+    
+    # Ожидаем указанное время или нажатие клавиши
+    for ((i=0; i<$INTERVAL; i++)); do
+      # Проверяем, было ли нажатие клавиши
+      if check_keypress; then
+        auto_cleanup  # Выходим из скрипта при нажатии любой клавиши
+      fi
+      sleep 1
+    done
+  done
+  
+  # Очистка при завершении (на всякий случай)
+  rm -f "$TMP_SCRIPT"
+}
+
+# Если включен режим автообновления, запускаем его
+if $AUTO_MODE; then
+  run_auto_mode
+  exit 0
+fi
+
+echo -e =========='|'$bz' INey 1.0 '$endc'|'==========
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+# Подготовка заголовка fzf в зависимости от языка
+if [ "$LANGUAGE" = "RU" ]; then
+    # Русский
+    FZF_HEADER="
+↑↓: вверх/вниз, enter: выбрать, s: остановить все VPN/Proxy
+q: QR-code WiFi, a: автообновление, o: другое, ESC: выход"
+    EXIT_MSG="Для выхода нажмите любую клавишу"
+    BORDER_LABEL="| Информация Linux Ney |"
+
+    TIME_HEADER="[>] Время:"
+    WAN_ONLINE="[>] Интернет (WAN): онлайн"
+    WAN_PUBLIC_IP_INFO="[>]  Внешний IPv4:"
+    WAN_PUBLIC_IP6_INFO="[>]  Внешний IPv6:"
+    LOCAL_IP6="[>]  Локальный IPv6:"
+    KILLSWITCH="[>] Килл-свич VPN/Proxy:"
+    WIFIWLAN="[>] WiFi-WLAN (Интернет):"
+    LANPORT="[>] LAN-порт (eth0):"
+    OPENVPN="[>] OpenVPN-клиент:"
+    WIREGUARD="[>] WireGuard VPN-клиент:"
+    L2TP="[>] L2TP VPN-клиент:"
+    PPTP="[>] PPTP VPN-клиент:"
+    SSTP="[>] SSTP VPN-клиент:"
+    IKEV2="[>] IKEv2 VPN-клиент:"
+    PROXY="[>] Прокси-клиент:"
+    SSH="[>] SSH-клиент:"
+    SHADOWSOCKS="[>] Shadowsocks-клиент:"
+    CLOAK="[>] Cloak-клиент:"
+    STUNNEL="[>] Stunnel-клиент:"
+else
+    # Английский
+    FZF_HEADER="
+↑↓: up/down, enter: select, s: stop all VPN/Proxy
+q: QR-code WiFi, a: autoreload info, o: other, ESC: exit"
+    EXIT_MSG="Press any key to exit"
+    BORDER_LABEL="| Linux Ney information |"
+
+    TIME_HEADER="[>] Time:"
+    WAN_ONLINE="[>] Internet (WAN): online"
+    WAN_PUBLIC_IP_INFO="[>]  Public IPv4:"
+    WAN_PUBLIC_IP6_INFO="[>]  Public IPv6:"
+    LOCAL_IP6="[>]  Local IPv6:"
+    KILLSWITCH="[>] Kill-Switch VPN/Proxy:"
+    WIFIWLAN="[>] WiFi-WLAN (Internet):"
+    LANPORT="[>] LAN-port (eth0):"
+    OPENVPN="[>] OpenVPN-client:"
+    WIREGUARD="[>] WireGuard VPN-client:"
+    L2TP="[>] L2TP VPN-client:"
+    PPTP="[>] PPTP VPN-client:"
+    SSTP="[>] SSTP VPN-client:"
+    IKEV2="[>] IKEv2 VPN-client:"
+    PROXY="[>] Proxy-client:"
+    SSH="[>] SSH-client:"
+    SHADOWSOCKS="[>] Shadowsocks-client:"
+    CLOAK="[>] Cloak-client:"
+    STUNNEL="[>] Stunnel-client:"
+fi
+
+while true; do
+    # Запуск infoney с передачей выбранного языка
+    CHOICE=$(infoney | fzf --ansi --style default --pointer=">" \
+          --header="$FZF_HEADER" \
+          --bind 'enter:become(echo {})' \
+          --bind='s:execute(sudo stopney -q; read -t 2 -n 1 -s)+reload(infoney)' \
+          --bind='q:execute(sudo wifiney -q qr; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+reload(infoney)' \
+          --bind='a:execute(iney -a)+reload(infoney)' \
+          --bind='o:execute(sudo cpney -q panel && sleep 1)+reload(infoney)' \
+          --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+          --height=100% --info=inline --margin=1 --padding=1 --header-lines=1
+          )
+    if [ -z "$CHOICE" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+      echo =================================
+      exit 0
+    fi
+    case "$CHOICE" in          
+        "$TIME_HEADER"*)
+        sudo dpkg-reconfigure tzdata
+        ;;
+
+        "$WAN_ONLINE"*)
+        sudo ipney -q st
+        echo -e "\033[2;37m[*] $EXIT_MSG\033[0m"
+        read -n 1 -s
+        exec $0
+        ;;
+        "$WAN_PUBLIC_IP_INFO"*)
+        sudo ipney -q ip $(echo {} | awk '{print $4}')
+        echo -e "\033[2;37m[*] $EXIT_MSG\033[0m"
+        read -n 1 -s
+        exec $0
+        ;;
+        "$WAN_PUBLIC_IP6_INFO"*)
+        sudo ipney -q ip $(echo {} | awk '{print $4}')
+        echo -e "\033[2;37m[*] $EXIT_MSG\033[0m"
+        read -n 1 -s
+        exec $0
+        ;;
+        "[>]  IPv6:"*)
+        sudo ipney -q ipv6-manager
+        ;;
+        "$LOCAL_IP6"*)
+        sudo ipney -q ipv6-manager
+        ;;
+        "[>] DNS1:"*)
+        sudo dnsney -q manager
+        ;;              
+        "$KILLSWITCH"*)
+        killstate=$(echo "$CHOICE" | grep -o -E 'ON|OFF|ВКЛ|ВЫКЛ')
+        if [ "$killstate" == "OFF" ] || [ "$killstate" == "ВЫКЛ" ]; then
+          sudo ipney -q killon
+        else
+          sudo ipney -q killoff
+        fi      
+        sleep 1
+        ;;
+
+        "$WIFIWLAN"*)
+        sudo wifiney -q manager-wlan
+        ;;
+
+        "$LANPORT"*)
+        lanport=$(echo "$CHOICE" | grep -o -E 'IN|OUT')
+        if [ "$lanport" == "OUT" ]; then
+          sudo ipney -q lan-in eth0
+        else
+          sudo ipney -q lan-out eth0
+        fi      
+        sleep 1
+        ;;
+        "[>] USB (eth1):"*)
+        lanport=$(echo "$CHOICE" | grep -o -E 'IN|OUT')
+        if [ "$lanport" == "OUT" ]; then
+          sudo ipney -q lan-in eth1
+        else
+          sudo ipney -q lan-out eth1
+        fi      
+        sleep 1
+        ;;
+        "[>] USB (eth2):"*)
+        lanport=$(echo "$CHOICE" | grep -o -E 'IN|OUT')
+        if [ "$lanport" == "OUT" ]; then
+          sudo ipney -q lan-in eth2
+        else
+          sudo ipney -q lan-out eth2
+        fi      
+        sleep 1
+        ;;
+        "[>] USB (eth3):"*)
+        lanport=$(echo "$CHOICE" | grep -o -E 'IN|OUT')
+        if [ "$lanport" == "OUT" ]; then
+          sudo ipney -q lan-in eth3
+        else
+          sudo ipney -q lan-out eth3
+        fi      
+        sleep 1
+        ;;
+
+        "[>] WiFi-AP:"*)
+        sudo wifiney -q manager-ap
+        ;;
+        "[>] WiFi-AP2:"*)
+        sudo wifiney -q manager-ap2
+        ;;
+
+        "$OPENVPN"*)
+        sudo ovpnney -q manager
+        ;;
+        "$WIREGUARD"*)
+        sudo wgney -q manager
+        ;;
+
+        "$L2TP"*)
+        sudo l2tpney -q manager
+        ;;
+        "$PPTP"*)
+        sudo pptpney -q manager
+        ;;
+        "$SSTP"*)
+        sudo sstpney -q manager
+        ;;
+        "$IKEV2"*)
+        sudo ikev2ney -q manager
+        ;;
+
+        "$PROXY"*)
+        sudo proxyney -q manager
+        ;;
+        "$SSH"*)
+        sudo sshney -q manager
+        ;;
+        "$SHADOWSOCKS"*)
+        sudo ssney -q manager
+        ;;
+        
+        "$CLOAK"*)
+        sudo ckney -q manager
+        ;;
+        "$STUNNEL"*)
+        sudo stunney -q manager
+        ;;
+        "[*]"*)
+        ;;            
+    esac
+done

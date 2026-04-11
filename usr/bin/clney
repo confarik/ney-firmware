@@ -1,0 +1,340 @@
+#!/bin/bash
+
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e =========='|'$bz' ClNey 2.0 '$endc'|'=========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+HOMENEY=/home/ney
+HISTORY=/etc/history-vpn-proxy
+case $1 in
+    manager)
+    while true; do
+      # Проверяем состояние истории команд
+      COMMAND_STATUS=$(grep -oP 'HISTSIZE=\K\d+' "$HOMENEY/.bashrc" 2>/dev/null)
+      if [ "$COMMAND_STATUS" = "1000" ]; then
+        [ "$LANGUAGE" = "RU" ] && COMMAND_STATUS="[ВКЛ]" || COMMAND_STATUS="[ON]"
+      else
+        [ "$LANGUAGE" = "RU" ] && COMMAND_STATUS="[ВЫКЛ]" || COMMAND_STATUS="[OFF]"
+      fi
+      
+      # Проверяем состояние логирования
+      rsyslog_active=0
+      journald_active=0
+      if sudo systemctl is-active rsyslog >/dev/null 2>&1; then
+        rsyslog_active=1
+      fi
+      if sudo systemctl is-active systemd-journald >/dev/null 2>&1; then
+        journald_active=1
+      fi
+      if [ $rsyslog_active -eq 1 ] || [ $journald_active -eq 1 ]; then
+        [ "$LANGUAGE" = "RU" ] && LOG_STATUS="[ВКЛ]" || LOG_STATUS="[ON]"
+      else
+        [ "$LANGUAGE" = "RU" ] && LOG_STATUS="[ВЫКЛ]" || LOG_STATUS="[OFF]"
+      fi
+
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать
+ESC: выход"
+        BORDER_LABEL="| Менеджер логирования |"
+        INTERACTIVE=" [1]  Очистка истории команд
+ [2]  Вкл/откл введение истории команд - $COMMAND_STATUS
+ [3]  Очистка логов (технических и системных журналов)
+ [4]  Вкл/выкл логирование (технический и системный журналы) - $LOG_STATUS
+ [5]  Очистка истории всех подключенных VPN/Proxy"
+      else
+        FZF_HEADER="
+enter: select
+ESC: exit"
+        BORDER_LABEL="| Log manager |"
+        INTERACTIVE=" [1]  Clear command history
+ [2]  Enable/disable command history - $COMMAND_STATUS
+ [3]  Clear logs (technical and system logs)
+ [4]  Enable/disable logging (technical and system logs) - $LOG_STATUS
+ [5]  Clear history of all connected VPN/Proxy"
+      fi
+
+      CHOICE=$(echo "$INTERACTIVE" | fzf --ansi --pointer=">" \
+          --header="$FZF_HEADER" \
+          --bind 'enter:become(echo {})' \
+          --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+          --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$CHOICE" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit." 
+        echo =================================
+        exit 0
+      fi
+      case "$CHOICE" in
+        *"[1]"*)
+        sudo clney -q commands
+        ;;              
+        *"[2]"*)
+        COMMAND_STATUS=$(grep -oP 'HISTSIZE=\K\d+' "$HOMENEY/.bashrc" 2>/dev/null)
+        if [ "$COMMAND_STATUS" = "1000" ]; then
+          sudo clney -q commands-off
+        else
+          sudo clney -q commands-on
+        fi
+        ;;              
+        *"[3]"*)
+        sudo clney -q jour
+        ;;
+        *"[4]"*)
+        rsyslog_active=0
+        journald_active=0
+        if sudo systemctl is-active rsyslog >/dev/null 2>&1; then
+          rsyslog_active=1
+        fi
+        if sudo systemctl is-active systemd-journald >/dev/null 2>&1; then
+          journald_active=1
+        fi
+        if [ $rsyslog_active -eq 1 ] || [ $journald_active -eq 1 ]; then
+          sudo clney -q log-off
+        else
+          sudo clney -q log-on
+        fi
+        ;;
+        *"[5]"*)
+        sudo clney -q vpnproxy
+        ;;            
+        esac
+      done
+    shift
+    exit 0 ;;
+    commands)
+    sudo sh -c "echo > $HOMENEY/.bash_history"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Очистили историю команд. После ребута чисто." || echo -e "[*] ${gz}Done:${endc} Cleared history. After reboot, it will be clean."
+    echo =================================
+    shift
+    exit 1 ;;
+    commands-on)
+    sudo sed -i $HOMENEY/.bashrc -e '/HISTSIZE=/c HISTSIZE=1000' 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Включено введение истории команд." || echo -e "[*] ${gz}Done:${endc} Enabled history logging."
+    echo =================================
+    shift
+    exit 1 ;;
+    commands-off)
+    sudo sed -i $HOMENEY/.bashrc -e '/HISTSIZE=/c HISTSIZE=1' 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Отключено введение истории команд." || echo -e "[*] ${gz}Done:${endc} Disabled history logging."
+    echo =================================
+    shift
+    exit 1 ;;
+    vpnproxy)
+    sudo sh -c "echo > $HISTORY/ovpnney-h 1>/dev/null 2>&1"
+    sudo sh -c "echo > $HISTORY/pptpney-h 1>/dev/null 2>&1"
+    sudo sh -c "echo > $HISTORY/sstpney-h 1>/dev/null 2>&1"
+    sudo sh -c "echo > $HISTORY/proxyney-h 1>/dev/null 2>&1"
+    sudo sh -c "echo > $HISTORY/wgney-h 1>/dev/null 2>&1"
+    sudo sh -c "echo > $HISTORY/ssney-h 1>/dev/null 2>&1"
+    sudo sh -c "echo > $HISTORY/ikev2ney-h 1>/dev/null 2>&1"
+    sudo sh -c "echo > $HISTORY/l2tpney-h 1>/dev/null 2>&1"
+    sudo sh -c "echo > $HISTORY/ckney-h 1>/dev/null 2>&1"
+    sudo sh -c "echo > $HISTORY/stunney-h 1>/dev/null 2>&1"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Очистили историю подключений к VPN/Proxy." || echo -e "[*] ${gz}Done:${endc} Cleared history of VPN/Proxy connections."
+    echo =================================
+    shift
+    exit 1 ;;
+    jour|j)
+    sudo sh -c "echo > ~/.ssh/known_hosts 1>/dev/null 2>&1"
+    sudo apt-get clean 1>/dev/null 2>&1
+    sudo apt-get autoclean 1>/dev/null 2>&1
+    sudo sh -c "echo > /var/log/alternatives.log 1>/dev/null 2>&1"
+    sudo sh -c "rm -rf /var/log/apt/* 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/bootstrap.log 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/btmp 1>/dev/null 2>&1"
+    sudo sh -c "rm -rf /var/log/daemon.log.* 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/daemon.log 1>/dev/null 2>&1"
+    sudo sh -c "rm -rf /var/log/debug.* 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/debug 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/dpkg.log 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/faillog 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/fontconfig.log 1>/dev/null 2>&1"
+    sudo sh -c "rm -rf /var/log/kern.log.* 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/kern.log 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/lastlog 1>/dev/null 2>&1"
+    sudo sh -c "rm -rf /var/log/messages.* 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/messages 1>/dev/null 2>&1"
+    sudo sh -c "rm -rf /var/log/openvpn/* 1>/dev/null 2>&1"
+    sudo sh -c "rm -rf /var/log/stunnel4/stunnel.log.* 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/stunnel4/stunnel.log 1>/dev/null 2>&1"
+    sudo sh -c "rm -rf /var/log/syslog.* 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/syslog 1>/dev/null 2>&1"
+    sudo sh -c "rm -rf /var/log/user.log.* 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/user.log 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/wtmp 1>/dev/null 2>&1"
+    sudo sh -c "rm -rf /var/backups/* 1>/dev/null 2>&1"
+    sudo sh -c "rm -rf /var/log/auth.log.* 1>/dev/null 2>&1"
+    sudo sh -c "echo > /var/log/auth.log 1>/dev/null 2>&1"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Очищены логи (технический и системный журналы)." || echo -e "[*] ${gz}Done:${endc} Cleared logs (technical and system logs)."
+    echo =================================
+    shift
+    exit 1 ;;
+    log-on)
+    sudo sh -c "sed -i /etc/NetworkManager/NetworkManager.conf -e '/domains=/c #domains=ALL:OFF'" 1>/dev/null 2>&1
+    sudo sh -c "sed -i /etc/NetworkManager/NetworkManager.conf -e '/level=/c #level=OFF'" 1>/dev/null 2>&1
+    # Запуск rsyslog если доступен
+    if systemctl list-unit-files | grep -q rsyslog.service 1>/dev/null 2>&1; then
+      sudo systemctl unmask rsyslog 1>/dev/null 2>&1
+      sudo systemctl start rsyslog 1>/dev/null 2>&1
+      sudo systemctl enable rsyslog 1>/dev/null 2>&1
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} rsyslog запущен." || echo -e "[*] ${gz}Done:${endc} rsyslog started."
+    fi
+    # Запуск systemd-journald если доступен
+    if systemctl list-unit-files | grep -q systemd-journald.service 1>/dev/null 2>&1; then
+      JOURNALD_UNITS="systemd-journald.service systemd-journald-audit.socket systemd-journald-dev-log.socket systemd-journald.socket"
+      sudo systemctl unmask systemd-journald.service 1>/dev/null 2>&1
+      sudo systemctl start $JOURNALD_UNITS 1>/dev/null 2>&1
+      sudo systemctl enable $JOURNALD_UNITS 1>/dev/null 2>&1
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} systemd-journald запущен." || echo -e "[*] ${gz}Done:${endc} systemd-journald started."
+    fi
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Логирование (технический и системный журналы) запущено." || echo -e "[*] ${gz}Done:${endc} Logging (technical and system logs) started."
+    echo =================================
+    shift
+    exit 1 ;;
+    log-off)
+    sudo sh -c "sed -i /etc/NetworkManager/NetworkManager.conf -e '/domains=/c domains=ALL:OFF'" 1>/dev/null 2>&1
+    sudo sh -c "sed -i /etc/NetworkManager/NetworkManager.conf -e '/level=/c level=OFF'" 1>/dev/null 2>&1
+    # Остановка rsyslog если доступен
+    if systemctl list-unit-files | grep -q rsyslog.service 1>/dev/null 2>&1; then
+      if [ "$(sudo systemctl is-active rsyslog 2>/dev/null)" = "active" ]; then
+        sudo systemctl stop rsyslog 1>/dev/null 2>&1
+        sudo systemctl disable rsyslog 1>/dev/null 2>&1
+        sudo systemctl mask rsyslog 1>/dev/null 2>&1
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} rsyslog выключено." || echo -e "[*] ${gz}Done:${endc} rsyslog disabled."
+      fi
+    fi
+    # Остановка systemd-journald если доступен
+    if systemctl list-unit-files | grep -q systemd-journald.service 1>/dev/null 2>&1; then
+      if [ "$(sudo systemctl is-active systemd-journald 2>/dev/null)" = "active" ]; then
+        JOURNALD_UNITS="systemd-journald.service systemd-journald-audit.socket systemd-journald-dev-log.socket systemd-journald.socket"
+        sudo systemctl stop $JOURNALD_UNITS 1>/dev/null 2>&1
+        sudo systemctl disable $JOURNALD_UNITS 1>/dev/null 2>&1
+        sudo systemctl mask systemd-journald.service 1>/dev/null 2>&1
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} systemd-journald выключено." || echo -e "[*] ${gz}Done:${endc} systemd-journald disabled."
+      fi
+    fi
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Логирование (технический и системный журналы) отключено." || echo -e "[*] ${gz}Done:${endc} Logging (technical and system logs) stopped."
+    echo =================================
+    shift
+    exit 1 ;;
+    *)
+    if [ "$LANGUAGE" = "RU" ]; then
+cat << EOF
+[*] Использование: sudo clney [опции]
+[*] Опции:
+[*]  manager        - менеджер логирования
+[*]  commands       - очистка истории команд
+[*]  commands-on    - включить введение истории команд
+[*]  commands-off   - отключить введение истории команд
+[*]  vpnproxy       - очистка истории всех подключенных VPN/Proxy
+[*]  jour           - очистка логов (технических и системных журналов)
+[*]  log-on         - включить логирование (технический и системный журналы)
+[*]  log-off        - отключить логирование (технический и системный журналы)
+[*]
+[*]   Теория: На малине в журналы только локально записываются техническая и системная информации.
+[*]     Журналирование является основным источником информации о работе системы и ее ошибках.
+[*]     В нем поможет существенно сэкономить время и быстрее устранить ошибку.
+[*]     По умолчанию логирование отключено, а введение истории команд включено.
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)
+EOF
+    else
+    cat << EOF
+[*] Usage: sudo clney [options]
+[*] Options:
+[*]  manager        - log manager
+[*]  commands       - clear command history
+[*]  commands-on    - enable command history
+[*]  commands-off   - disable command history
+[*]  vpnproxy       - clear history of all connected VPN/Proxy
+[*]  jour           - clear logs (technical and system logs)
+[*]  log-on         - enable logging (technical and system logs)
+[*]  log-off        - disable logging (technical and system logs)
+[*]
+[*]   Theory: On the Raspberry Pi, only technical and system information is recorded in the logs.
+[*]     Logging is the main source of information about the system's operation and errors.
+[*]     It will help save time and quickly resolve errors.
+[*]     By default, logging is disabled, and command history is enabled.
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+EOF
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+esac

@@ -1,0 +1,653 @@
+#!/bin/bash
+export LASTCMD=$@
+
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e =========='|'$bz' CkNey 2.0 '$endc'|'=========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+sudo which ckclient 1>/dev/null ||
+{ echo -e [*] ''$yz'You must install Cloak.'$endc'' ; exit 1 ; }
+
+HOMENEY=/home/ney
+DIRCK=/etc/ck-client
+HISTORY=/etc/history-vpn-proxy
+
+check_and_move_config() {
+    local configck="$1"
+    if [ -n "$configck" ]; then
+      if [ -f "$HOMENEY/$configck" ]; then
+        sudo mv $configck $DIRCK
+        sudo chmod 644 $DIRCK/$configck
+        [ "$LANGUAGE" = "RU" ] && echo -e [*] "Файл конфига Cloak $zsh$configck$endc перемещен в папку $DIRCK" || echo -e [*] "File config Cloak $zsh$configck$endc moved to $DIRCK"
+      fi
+        sudo cp $DIRCK/$configck $DIRCK/config.json
+        sudo chmod 644 $DIRCK/config.json
+        [ "$LANGUAGE" = "RU" ] && echo -e [*] 'Выбран конфиг Cloak '$zsh$configck$endc'.' || echo -e [*] 'Selected config Cloak '$zsh$configck$endc'.'
+    fi
+}
+
+start_ckclient() {
+    local configck="$1"
+    local udp_support="$2"
+    if [[ "$udp_support" == "-u" ]]; then
+        sudo nohup ckclient -u -c $DIRCK/$configck -i 0.0.0.0 1>/dev/null 2>&1 &
+    else
+        sudo nohup ckclient -c $DIRCK/$configck 1>/dev/null 2>&1 &
+    fi
+}
+
+# Функция для автозапуска при старте системы
+# Функция для обновления systemd сервиса ckclient.service
+update_ckclient_service() {
+    local mode="$1"
+    local service_file="/lib/systemd/system/ckclient.service"
+    
+    # Создание нового содержимого сервис-файла
+    local service_content="[Unit]\nDescription=Cloak-client\n\n[Service]\nType=forking"
+    
+    # Добавляем параметр -u для UDP режима если необходимо
+    if [ "$mode" = "udp" ]; then
+        service_content="$service_content\nExecStart=/usr/bin/ckclient -u -c /etc/ck-client/config.json"
+    else
+        service_content="$service_content\nExecStart=/usr/bin/ckclient -c /etc/ck-client/config.json"
+    fi
+    
+    service_content="$service_content\nExecStop=killall ckclient\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target"
+    
+    # Запись нового сервис-файла
+    echo -e "$service_content" | sudo tee "$service_file" > /dev/null
+    sudo chmod 644 "$service_file"
+    
+    # Перезагрузка системных сервисов
+    sudo systemctl daemon-reload
+}
+
+autostart_ckclient() {
+    if [ -f "$DIRCK/config.json" ]; then
+        # Проверяем наличие флага UDP режима
+        if [ -f "$DIRCK/udp_mode" ]; then
+            # Запуск в UDP режиме
+            sudo nohup ckclient -u -c $DIRCK/config.json -i 0.0.0.0 1>/dev/null 2>&1 &
+        else
+            # Запуск в обычном режиме
+            sudo nohup ckclient -c $DIRCK/config.json 1>/dev/null 2>&1 &
+        fi
+    fi
+}
+
+# Проверка на параметр автозапуска при загрузке системы
+if [ "$1" = "--autostart" ]; then
+    # Запускаем Cloak-client с нужными настройками UDP в зависимости от флага
+    autostart_ckclient
+    exit 0
+fi
+
+case $1 in
+    manager)
+    LAST_SERVERIP=$(sudo awk -F'"' '/RemoteHost/{host=$4} /LocalPort/{port=$4} END{if(host!="" && port!="") print host":"port" "((system("sudo ss -tulpn | grep -q \"udp.*ckclient\"") == 0) ? "udp" : ""); else print "N/A"}' /etc/ck-client/config.json 2>/dev/null)
+    
+    CK_STATUS=$(sudo ss -tulpn 2>/dev/null | grep -q ckclient && echo true)
+    if [ "$CK_STATUS" = "true" ]; then
+      [ "$LANGUAGE" = "RU" ] && CK_STATUS="ВКЛ" || CK_STATUS="ON"
+    else
+      [ "$LANGUAGE" = "RU" ] && CK_STATUS="ВЫКЛ" || CK_STATUS="OFF"
+    fi
+    
+    if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+[*] Cloak-клиент: $CK_STATUS
+[*]  Server IP/Name: $LAST_SERVERIP
+
+enter: запустить
+u: запустить сохраненный конфиг с UDP
+n: запустить новый конфиг
+s: выключить
+e: редактировать конфиг
+a: включить автозапуск (только TCP)
+ctrl-a: включить автозапуск с UDP
+d: выключить автозапуск
+h: история запуска
+delete: удалить конфиг
+ctrl-i: импортировать все конфиги
+ctrl-e: экспортировать все конфиги
+ESC: выход"
+        EXIT_MSG="Для выхода нажмите любую клавишу"
+        BORDER_LABEL="| Менеджер Cloak-клиент |"
+    else
+        FZF_HEADER="
+[*] Cloak-client: $CK_STATUS
+[*]  Server IP/Name: $LAST_SERVERIP
+
+enter: start
+u: start saved config file with UDP
+n: start new config file
+s: stop
+e: edit config file
+a: enable autostart (TCP only)
+ctrl-a: enable autostart with UDP
+d: disable autostart
+h: startup history
+delete: delete config file
+ctrl-i: import all configs
+ctrl-e: export all configs
+ESC: exit"
+        BORDER_LABEL="| Cloak-client manager |"
+        EXIT_MSG="Press any key to exit"
+    fi
+
+    (for CONFIG in $(ls $DIRCK/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r); do
+        if [ "$CONFIG" != "config.json" ]; then
+            if systemctl is-enabled ckclient &>/dev/null && [ -f "$DIRCK/config.json" ] && diff -q "$DIRCK/$CONFIG" "$DIRCK/config.json" &>/dev/null; then
+                # Проверка наличия флага UDP режима для правильного отображения индикатора
+                if [ -f "$DIRCK/udp_mode" ]; then
+                    echo -e "$CONFIG $bz(auto UDP)$endc"
+                else
+                    echo -e "$CONFIG $bz(auto)$endc"
+                fi
+            else
+                echo "$CONFIG"
+            fi
+        else
+            echo "$CONFIG"
+        fi
+    done) | fzf --ansi --style default --preview 'cat -n /etc/ck-client/$(echo {} | cut -d" " -f1)' \
+      --header="$FZF_HEADER" \
+      --bind='n:execute(ckney -q start; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(ckney -q manager)' \
+      --bind='enter:execute(ckney -q start $(echo {} | cut -d" " -f1); echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(ckney -q manager)' \
+      --bind='u:execute(ckney -q start -u $(echo {} | cut -d" " -f1); echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(ckney -q manager)' \
+      --bind='s:execute-silent(sudo ckney stop && sleep 1)+become(ckney -q manager)' \
+      --bind='e:execute(sudo nano -l -m /etc/ck-client/$(echo {} | cut -d" " -f1))' \
+      --bind='e:+reload(for CONFIG in $(ls /etc/ck-client/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r); do if [ "$CONFIG" != "config.json" ]; then if systemctl is-enabled ckclient &>/dev/null && [ -f "/etc/ck-client/config.json" ] && diff -q "/etc/ck-client/$CONFIG" "/etc/ck-client/config.json" &>/dev dev/null; then if [ -f "/etc/ck-client/udp_mode" ]; then echo -e "$CONFIG \033[44;37m(auto UDP)\033[0m"; else echo -e "$CONFIG \033[44;37m(auto)\033[0m"; fi; else echo "$CONFIG"; fi; else echo "$CONFIG"; fi; done)' \
+      --bind='a:execute-silent(sudo ckney enable $(echo {} | cut -d" " -f1))' \
+      --bind='a:+reload(for CONFIG in $(ls /etc/ck-client/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r); do if [ "$CONFIG" != "config.json" ]; then if systemctl is-enabled ckclient &>/dev/null && [ -f "/etc/ck-client/config.json" ] && diff -q "/etc/ck-client/$CONFIG" "/etc/ck-client/config.json" &>/dev/null; then if [ -f "/etc/ck-client/udp_mode" ]; then echo -e "$CONFIG \033[44;37m(auto UDP)\033[0m"; else echo -e "$CONFIG \033[44;37m(auto)\033[0m"; fi; else echo "$CONFIG"; fi; else echo "$CONFIG"; fi; done)' \
+      --bind='ctrl-a:execute-silent(sudo ckney enable -u $(echo {} | cut -d" " -f1))' \
+      --bind='ctrl-a:+reload(for CONFIG in $(ls /etc/ck-client/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r); do if [ "$CONFIG" != "config.json" ]; then if systemctl is-enabled ckclient &>/dev/null && [ -f "/etc/ck-client/config.json" ] && diff -q "/etc/ck-client/$CONFIG" "/etc/ck-client/config.json" &>/dev/null; then if [ -f "/etc/ck-client/udp_mode" ]; then echo -e "$CONFIG \033[44;37m(auto UDP)\033[0m"; else echo -e "$CONFIG \033[44;37m(auto)\033[0m"; fi; else echo "$CONFIG"; fi; else echo "$CONFIG"; fi; done)' \
+      --bind='d:execute-silent(sudo ckney disable)' \
+      --bind='d:+reload(for CONFIG in $(ls /etc/ck-client/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r); do if [ "$CONFIG" != "config.json" ]; then if systemctl is-enabled ckclient &>/dev/null && [ -f "/etc/ck-client/config.json" ] && diff -q "/etc/ck-client/$CONFIG" "/etc/ck-client/config.json" &>/dev/null; then if [ -f "/etc/ck-client/udp_mode" ]; then echo -e "$CONFIG \033[44;37m(auto UDP)\033[0m"; else echo -e "$CONFIG \033[44;37m(auto)\033[0m"; fi; else echo "$CONFIG"; fi; else echo "$CONFIG"; fi; done)' \
+      --bind='h:execute(ckney -q history && sleep 2)+become(ckney -q manager)' \
+      --bind='delete:execute-silent(sudo ckney -rm $(echo {} | cut -d" " -f1))' \
+      --bind='delete:+reload(for CONFIG in $(ls /etc/ck-client/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r); do if [ "$CONFIG" != "config.json" ]; then if systemctl is-enabled ckclient &>/dev/null && [ -f "/etc/ck-client/config.json" ] && diff -q "/etc/ck-client/$CONFIG" "/etc/ck-client/config.json" &>/dev/null; then if [ -f "/etc/ck-client/udp_mode" ]; then echo -e "$CONFIG \033[44;37m(auto UDP)\033[0m"; else echo -e "$CONFIG \033[44;37m(auto)\033[0m"; fi; else echo "$CONFIG"; fi; else echo "$CONFIG"; fi; done)' \
+      --bind='ctrl-i:execute(sudo ckney -q import; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -t 2 -n 1 -s)+become(ckney -q manager)' \
+      --bind='ctrl-e:execute(sudo ckney -q export; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -t 2 -n 1 -s)+reload(ckney -q manager)' \
+      --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+      --height=65% --info=inline --margin=1 --padding=1
+    if ! $QUIET_MODE; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    up|start)
+    # Check if the first parameter is -u for UDP mode
+    UDP_MODE=""
+    if [ "$2" = "-u" ]; then
+      UDP_MODE="-u"
+      shift
+      configck="$2"
+    else
+      configck="$2"
+    fi
+    
+    if [ -n "$configck" ]; then
+      conck=$(sudo netstat -tulpn | grep ckclient)
+      if ! test -z "$conck" ; then
+        [ "$LANGUAGE" = "RU" ] && echo -e $yz"[*] Рестарт..."$endc || echo -e $yz"[*] Restarting..."$endc
+        sudo killall ckclient 1>/dev/null 2>&1
+        sleep 1
+      fi
+      # Call the check and move config function
+      check_and_move_config "$configck"
+      
+      # Start the client with or without UDP option
+      if [ -n "$UDP_MODE" ]; then
+        start_ckclient "$configck" "-u"
+      else
+        start_ckclient "$configck"
+      fi
+      sleep 3
+      conck=$(sudo netstat -tulpn | grep ckclient)
+      if ! test -z "$conck" ; then
+        nameck=$(sudo cat $DIRCK/config.json | grep RemoteHost | cut -d: -f2 | sed 's/\"//g' | sed 's/\,//g')
+        portck=$(sudo cat $DIRCK/config.json | grep LocalPort | cut -d: -f2 | sed 's/\"//g' | sed 's/\,//g')
+        udpck=$(sudo netstat -tulpn | grep ckclient | grep -o udp)
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Запущен Cloak-клиент: ${zsh}$nameck:$portck $udpck${endc}" || echo -e "[*] ${gz}Done:${endc} Started Cloak-client: ${zsh}$nameck:$portck $udpck${endc}"
+        echo -e "`date +%T`  `date +%d-%m-%Y`  VALID = ckney $LASTCMD" | sed 's/ -q//' >> $HISTORY/ckney-h
+      fi
+      if test -z "$conck" ; then
+        sudo killall ckclient 1>/dev/null 2>&1
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: не удалось запустить Cloak-клиент.$endc" || echo -e "[*] ${rz}Information: failed to start Cloak-client.$endc"
+        echo -e "`date +%T`  `date +%d-%m-%Y`  NO VALID = ckney $LASTCMD" | sed 's/ -q//' >> $HISTORY/ckney-h
+      fi
+      echo =================================
+    else
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать конфиг json
+ESC: выход"
+        BORDER_LABEL="| Менеджер Cloak-клиент |"
+      else
+        FZF_HEADER="
+enter: select config json
+ESC: exit"
+        BORDER_LABEL="| Cloak-client manager |"
+      fi
+      configck=$(ls -l $HOMENEY/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r | fzf --ansi --style default --preview 'cat -n /home/ney/{}' \
+        --header="$FZF_HEADER" \
+        --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$configck" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 1
+      fi
+      
+      # Теперь выбираем режим подключения TCP/UDP
+      UDP_OPTION=""
+      if [ "$LANGUAGE" = "RU" ]; then
+          echo
+          echo -e "[*] Конфиг $configck выбран."
+          FZF_HEADER="      Выберите режим подключения:"
+          BORDER_LABEL="| Менеджер Cloak-клиент |"
+          INTERACTIVE=" [1]  Без UDP поддержки (только TCP)
+ [2]  С UDP поддержкой"
+      else
+          echo
+          echo -e "[*] Config $configck selected."
+          FZF_HEADER="      Select connection mode:"
+          BORDER_LABEL="| Cloak-client manager |"
+          INTERACTIVE=" [1]  Without UDP support (only TCP)
+ [2]  With UDP support"
+      fi
+      MODE_CHOICE=$(echo "$INTERACTIVE" | fzf --ansi --pointer=">" \
+        --header="$FZF_HEADER" \
+        --bind 'enter:become(echo {})' \
+        --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$MODE_CHOICE" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 1
+      fi
+      
+      if [[ "$MODE_CHOICE" == *"[2]"* ]]; then
+        UDP_OPTION="-u"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выбран режим с UDP поддержкой" || echo -e "[*] UDP support selected"
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выбран режим без UDP" || echo -e "[*] UDP support not selected"
+      fi
+      # Add UDP option if selected
+      sudo ckney start $UDP_OPTION $configck
+    fi
+    shift
+    exit 1 ;;
+
+    stop|-s)
+    sudo killall ckclient 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Остановлен Cloak-клиент." || echo -e "[*] ${gz}Done:${endc} Cloak-client stopped."
+    echo =================================
+    shift
+    exit 1 ;;
+    enable)
+    # Проверяем наличие параметра -u (UDP режим)
+    UDP_MODE=""
+    if [ "$2" = "-u" ]; then
+      UDP_MODE="-u"
+      shift
+      configck="$2"
+    else
+      configck="$2"
+    fi
+
+    if [ ! -f "$DIRCK/$configck" ]; then
+      configck=$(
+      (for CONFIG in $(ls $DIRCK/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r); do
+        if [ "$CONFIG" != "config.json" ]; then
+            if systemctl is-enabled ckclient &>/dev/null && [ -f "$DIRCK/config.json" ] && diff -q "$DIRCK/$CONFIG" "$DIRCK/config.json" &>/dev/null; then
+                # Проверка наличия флага UDP режима для правильного отображения индикатора
+                if [ -f "$DIRCK/udp_mode" ]; then
+                    echo -e "$CONFIG $bz(auto UDP)$endc"
+                else
+                    echo -e "$CONFIG $bz(auto)$endc"
+                fi
+            else
+                echo "$CONFIG"
+            fi
+        else
+            echo "$CONFIG"
+        fi
+        if [ "$LANGUAGE" = "RU" ]; then
+            FZF_HEADER="
+enter: выбрать json для автозапуска
+ctrl-a: включить автозапуск с UDP режимом
+d: отключить автозапуск
+ESC: выход"
+            BORDER_LABEL="| Менеджер Cloak-клиент |"
+        else
+            FZF_HEADER="
+enter: select json for autostart
+ctrl-a: enable auto with UDP mode
+d: disable auto
+ESC: exit"
+            BORDER_LABEL="| Cloak-client manager |"
+        fi
+      done) | fzf --ansi --style default --preview 'cat -n /etc/ck-client/$(echo {} | cut -d" " -f1)' \
+        --header="$FZF_HEADER" \
+        --bind='enter:execute-silent(sudo ckney enable $(echo {} | cut -d" " -f1))' \
+        --bind='enter:+reload(for CONFIG in $(ls /etc/ck-client/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r); do if [ "$CONFIG" != "config.json" ]; then if systemctl is-enabled ckclient &>/dev/null && [ -f "/etc/ck-client/config.json" ] && diff -q "/etc/ck-client/$CONFIG" "/etc/ck-client/config.json" &>/dev/null; then if [ -f "/etc/ck-client/udp_mode" ]; then echo -e "$CONFIG \033[44;37m(auto UDP)\033[0m"; else echo -e "$CONFIG \033[44;37m(auto)\033[0m"; fi; else echo "$CONFIG"; fi; else echo "$CONFIG"; fi; done)' \
+        --bind='ctrl-a:execute-silent(sudo ckney enable -u $(echo {} | cut -d" " -f1))' \
+        --bind='ctrl-a:+reload(for CONFIG in $(ls /etc/ck-client/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r); do if [ "$CONFIG" != "config.json" ]; then if systemctl is-enabled ckclient &>/dev/null && [ -f "/etc/ck-client/config.json" ] && diff -q "/etc/ck-client/$CONFIG" "/etc/ck-client/config.json" &>/dev/null; then if [ -f "/etc/ck-client/udp_mode" ]; then echo -e "$CONFIG \033[44;37m(auto UDP)\033[0m"; else echo -e "$CONFIG \033[44;37m(auto)\033[0m"; fi; else echo "$CONFIG"; fi; else echo "$CONFIG"; fi; done)' \
+        --bind='d:execute-silent(sudo ckney disable)' \
+        --bind='d:+reload(for CONFIG in $(ls /etc/ck-client/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r); do if [ "$CONFIG" != "config.json" ]; then if systemctl is-enabled ckclient &>/dev/null && [ -f "/etc/ck-client/config.json" ] && diff -q "/etc/ck-client/$CONFIG" "/etc/ck-client/config.json" &>/dev/null; then if [ -f "/etc/ck-client/udp_mode" ]; then echo -e "$CONFIG \033[44;37m(auto UDP)\033[0m"; else echo -e "$CONFIG \033[44;37m(auto)\033[0m"; fi; else echo "$CONFIG"; fi; else echo "$CONFIG"; fi; done)' \
+        --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$configck" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 1
+      fi
+    fi
+    sudo cp $DIRCK/$configck $DIRCK/config.json
+    sudo chmod 644 $DIRCK/config.json
+    
+    # Обработка режима UDP если необходимо
+    if [ "$UDP_MODE" = "-u" ]; then
+      # Создаем флаг UDP режима
+      echo "UDP=yes" | sudo tee $DIRCK/udp_mode > /dev/null
+      sudo chmod 644 $DIRCK/udp_mode
+      
+      # Обновляем сервис-файл для поддержки UDP
+      update_ckclient_service "udp"
+      
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} При вкл малины конфиг Cloak ${zsh}$configck${endc} автоматически запускается с UDP поддержкой." || echo -e "[*] ${gz}Done:${endc} On boot, Cloak config ${zsh}$configck${endc} will be started with UDP support."
+    else
+      # Удаляем флаг UDP режима если он существует
+      sudo rm -f $DIRCK/udp_mode 2>/dev/null
+      
+      # Обновляем сервис-файл без UDP
+      update_ckclient_service "tcp"
+      
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} При вкл малины конфиг Cloak ${zsh}$configck${endc} автоматически запускается." || echo -e "[*] ${gz}Done:${endc} On boot, Cloak config ${zsh}$configck${endc} will be started."
+    fi
+    
+    sudo systemctl enable ckclient 1>/dev/null 2>&1
+    echo =================================
+    shift
+    exit 1 ;;
+    disable)
+    sudo systemctl disable ckclient 1>/dev/null 2>&1
+    # Удаляем флаг UDP режима если он существует
+    sudo rm -f $DIRCK/udp_mode 2>/dev/null
+    # Восстанавливаем стандартный сервис-файл
+    update_ckclient_service "tcp"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Автозапуск отключен." || echo -e "[*] ${gz}Done:${endc} Autostart disabled."
+    echo =================================
+    shift
+    exit 1 ;;
+    -ls)
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${zsh}Список конфигов Cloak:${endc}" || echo -e "[*] ${zsh}List of Cloak configs:${endc}"
+    sudo ls -1 $DIRCK/*.json 2>/dev/null | rev | cut -d/ -f1 | rev
+    echo =================================
+    shift
+    exit 1 ;;
+    -mv)
+    configck="$2"
+    if [ ! -f "$HOMENEY/$configck" ]; then
+
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: переместить конфиг json в /etc/ck-client
+ESC: выход"
+        BORDER_LABEL="| Менеджер Cloak-клиент |"
+      else
+        FZF_HEADER="
+enter: move config json to /etc/ck-client
+ESC: exit"
+        BORDER_LABEL="| Cloak-client manager |"
+      fi
+
+      (ls -l $HOMENEY/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r) | fzf --ansi --style default --preview 'cat -n /home/ney/{}' \
+        --header="$FZF_HEADER" \
+        --bind='enter:execute-silent(sudo ckney -mv {})' \
+        --bind='enter:+reload(ls /home/ney/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r)' \
+        --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=40% --info=inline --margin=1 --padding=1
+      if [ -z "$configck" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 1
+      fi
+    else
+      sudo mv $configck $DIRCK
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Конфиг json Cloak ${zsh}$configck${endc} перемещен в папку $DIRCK" || echo -e "[*] ${gz}Done:${endc} Config json Cloak ${zsh}$configck${endc} moved to $DIRCK"
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+    -rm)
+    configck="$2"
+    if [ ! -f "$DIRCK/$configck" ]; then
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: удалить конфиг json
+a: удалить все конфиги json
+ESC: выход"
+        BORDER_LABEL="| Менеджер Cloak-клиент |"
+      else
+        FZF_HEADER="
+enter: delete config json
+a: delete all configs json
+ESC: exit"
+        BORDER_LABEL="| Cloak-client manager |"
+      fi
+      (ls $DIRCK/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r) | fzf --ansi --style default --preview 'cat -n /etc/ck-client/{}' \
+        --header="$FZF_HEADER" \
+        --bind='enter:execute(sudo ckney -rm {})' \
+        --bind='enter:+reload(ls /etc/ck-client/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r)' \
+        --bind='a:execute-silent(sudo ckney -rm-all)' \
+        --bind='a:+reload(ls /etc/ck-client/*.json 2>/dev/null | rev | cut -d/ -f1 | rev | sort -r)' \
+        --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+        --height=40% --info=inline --margin=1 --padding=1
+      if [ -z "$configck" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 1
+      fi
+    else
+      sudo rm -rf $DIRCK/$configck
+      sudo touch $DIRCK/config.json 1>/dev/null 2>&1
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Конфиг json Cloak ${zsh}$configck${endc} удален" || echo -e "[*] ${gz}Done:${endc} Config json Cloak ${zsh}$configck${endc} deleted"
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+    -rm-all)
+    sudo rm -rf $DIRCK/* 1>/dev/null 2>&1
+    sudo touch $DIRCK/config.json 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Все конфиги Cloak удалены" || echo -e "[*] ${gz}Done:${endc} All Cloak configs deleted"
+    echo =================================
+    shift
+    exit 1 ;;
+    history)
+    if [ "$LANGUAGE" = "RU" ]; then
+      FZF_HEADER="
+enter: запустить
+a: очистить историю запуска
+ESC: выход"
+    else
+      FZF_HEADER="
+enter: start
+a: clear startup history
+ESC: exit"
+    fi
+    HISTORYCK=$(cat $HISTORY/ckney-h 2>/dev/null | sort -r -k2,2 | sed "s/NO VALID/$(echo -e "$rz")NO VALID$(echo -e "$endc")/g" | sed "s/  VALID/$(echo -e "$gz")  VALID$(echo -e "$endc")/g" | fzf --ansi \
+      --header="$FZF_HEADER" \
+      --bind='a:become(echo > /etc/history-vpn-proxy/ckney-h 1>/dev/null 2>&1)' \
+      --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+      --height=40% --info=inline --margin=1 --padding=1)
+    if [ -z "$HISTORYCK" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+      echo =================================
+      exit 1
+    fi
+    TUCK=$(echo "$HISTORYCK" | cut -d= -f2)
+    echo 'sudo'$TUCK''
+    sudo $TUCK
+    shift
+    exit 1 ;;
+    clear)
+    sudo sh -c "echo > $HISTORY/ckney-h 1>/dev/null 2>&1"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} История очищена." || echo -e "[*] ${gz}Done:${endc} History cleared."
+    echo =================================
+    shift
+    exit 1 ;;
+    import)
+    if [ ! "$(ls -A $HOMENEY/cloak-backup/* 2>/dev/null)" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось найти папку cloak-backup.${endc}" || echo -e "[*] ${rz}Failed: cloak-backup directory not found.${endc}"
+      echo =================================
+      exit 1
+    fi
+    sudo cp $HOMENEY/cloak-backup/* $DIRCK 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Импорт выполнен." || echo -e "[*] ${gz}Done:${endc} Import completed."
+    echo =================================
+    shift
+    exit 1 ;;
+    export)
+    sudo mkdir -p $HOMENEY/cloak-backup 1>/dev/null 2>&1
+    sudo cp $DIRCK/* $HOMENEY/cloak-backup 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Экспорт выполнен. Папка cloak-backup в домашней папке." || echo -e "[*] ${gz}Done:${endc} Export completed. cloak-backup directory in home directory."
+    echo =================================
+    shift
+    exit 1 ;;
+    *)
+    if [ "$LANGUAGE" = "RU" ]; then
+cat << EOF
+[*] Использование: sudo ckney [опции]
+[*] Опции:
+[*]  manager              - менеджер Cloak-клиент
+[*]  start [конфиг_json]  - запустить (можно не ввести конфиг)
+[*]  stop                 - отключить
+[*]  enable               - включить автозапуск при вкл малины
+[*]  disable              - отключить автозапуск при вкл малины
+[*]  -mv [конфиг_json]    - переместить файл json в /etc/ck-client (можно не ввести конфиг)
+[*]  -def                 - выбрать постоянный конфиг json
+[*]  -ls                  - cписок конфигов
+[*]  -rm [конфиг_json]    - удалить конфиг json (можно не ввести конфиг)
+[*]  history              - история запуска
+[*]  clear                - очистить историю
+[*]  import               - импортировать все конфиги в /etc/ck-client
+[*]  export               - экспортировать все конфиги в домашнюю папку
+[*]
+[*]   Как скинуть конфиг json Cloak на малину:
+[*]   1. Удалить пробелы, скобки из имени файла, если есть.
+[*]   2. Скинуть конфиг на малину в домашнюю папку /home/pi
+[*]      через SFTP(есть в битваисе кнопка "New SFTP window" в левой колонне,
+[*]      а для MacOS бесплатая программа ForkLift) или SCP.
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)
+EOF
+    else
+      cat << EOF
+[*] Usage: sudo ckney [options]
+[*] Options:
+[*]  manager              - Cloak-client manager
+[*]  start [config_json]  - start (can don't have to enter config)
+[*]  stop                 - stop
+[*]  enable               - enable autostart on boot
+[*]  disable              - disable autostart on boot
+[*]  -mv [config_json]    - move json file to /etc/ck-client directory (can don't have to enter config)
+[*]  -def                 - select permanent config json
+[*]  -ls                  - list of configs
+[*]  -rm [config_json]    - remove config json (can don't have to enter config)
+[*]  history              - startup history
+[*]  clear                - clear history
+[*]  import               - import all configs to /etc/ck-client
+[*]  export               - export all configs to home directory
+[*]
+[*]   How to send Cloak config json to Raspberry Pi and start:
+[*]   1. Remove spaces, brackets from the config file name, if any.
+[*]   2. Send the config to the Raspberry Pi's home directory
+[*]      /home/pi through SFTP(there is a button "New SFTP window" in the left column in Bitvise,
+[*]      or a free program ForkLift for MacOS) or SCP.
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+EOF
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+esac

@@ -1,0 +1,518 @@
+#!/bin/bash
+export LASTCMD=$@
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e ========'|'$bz' IKEv2Ney 2.1 '$endc'|'========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+HOMENEY=/home/ney
+HISTORY=/etc/history-vpn-proxy
+# Функция для проверки, является ли строка IP-адресом или хостом
+is_ip_or_host() {
+  local check_str=$1
+  [[ -z "$check_str" ]] && return 1
+  [[ $check_str =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]] && return 0
+  [[ $check_str == *"."* && $check_str != *" "* ]] && return 0
+  return 1
+}
+# Функция для создания конфигурации swanctl.conf
+create_swanctl_config() {
+  local serverip="$1"
+  local serverlogin="$2"
+  local serverpass="$3"
+  
+  SWANCTL_CONF=/etc/swanctl/swanctl.conf
+  
+cat > $SWANCTL_CONF <<EOF
+connections {
+  ikev2ney {
+    version = 2
+    remote_addrs = $serverip
+    dpd_delay = 300s
+    dpd_action = clear
+    local {
+      auth = eap-mschapv2
+      eap_id = $serverlogin
+    }
+    remote {
+      auth = pubkey
+      id = %any
+    }
+    children {
+      ikev2ney {
+        local_ts = 0.0.0.0/0
+        remote_ts = 0.0.0.0/0
+        start_action = start
+        dpd_action = clear
+        mark_in = 32
+        mark_out = 32
+      }
+    }
+  }
+}
+
+secrets {
+  eap-$serverlogin {
+    id = $serverlogin
+    secret = "$serverpass"
+  }
+}
+EOF
+}
+
+stop_ikev2ney() {
+  sudo swanctl --terminate --child ikev2ney 1>/dev/null 2>&1
+  sudo systemctl stop strongswan 1>/dev/null 2>&1
+}
+
+start_ikev2ney() {
+  sudo systemctl start strongswan 1>/dev/null 2>&1
+  sleep 2
+  sudo swanctl --load-all 1>/dev/null 2>&1
+  sleep 1
+  sudo swanctl --initiate --child ikev2ney 1>/dev/null 2>&1
+}
+case $1 in
+    manager)
+    [ "$LANGUAGE" = "RU" ] && IKEV2_CONNECTED=$(ip link show vti0 >/dev/null 2>&1 && echo "подключено" || echo "не подключено")
+    [ "$LANGUAGE" = "EN" ] && IKEV2_CONNECTED=$(ip link show vti0 >/dev/null 2>&1 && echo "connected" || echo "not connected")
+    
+    # Получаем последний IP сервера из swanctl.conf
+    LAST_SERVERIP=$(sudo grep -oP 'remote_addrs\s*=\s*\K.*' /etc/swanctl/swanctl.conf 2>/dev/null || echo "N/A")
+    
+    AUTOSTART_IKEV2=$(systemctl is-enabled strongswan 2>/dev/null)
+    if [ "$AUTOSTART_IKEV2" = "disabled" ]; then
+      [ "$LANGUAGE" = "RU" ] && AUTOSTART_IKEV2="отключено" || AUTOSTART_IKEV2="disabled"
+    else
+      [ "$LANGUAGE" = "RU" ] && AUTOSTART_IKEV2="включено" || AUTOSTART_IKEV2="enabled"
+    fi
+
+    if [ "$LANGUAGE" = "RU" ]; then
+      FZF_HEADER="
+[*] IKEv2 VPN-клиент: $IKEV2_CONNECTED - $LAST_SERVERIP
+[*]  Автоподключение: $AUTOSTART_IKEV2
+
+Enter: подключить
+n: подключить новый
+s: остановить
+a: включить автоподключение
+d: выключить автоподключение
+c: очистить историю
+ctrl-i: импортировать историю
+ctrl-e: экспортировать историю
+ESC: выйти"
+      EXIT_MSG="Для выхода нажмите любую клавишу"
+      BORDER_LABEL="| Менеджер IKEv2 VPN-клиент |"
+    else
+      FZF_HEADER="
+[*] IKEv2 VPN-client: $IKEV2_CONNECTED - $LAST_SERVERIP
+[*]  Autostart: $AUTOSTART_IKEV2
+
+Enter: re-connect
+n: connect new
+s: stop
+a: enable autostart 
+d: disable autostart
+c: clear history
+ctrl-i: import history
+ctrl-e: export history
+ESC: exit"
+      EXIT_MSG="Press any key to exit"
+      BORDER_LABEL="| IKEv2 VPN-client manager |"
+    fi
+    HISTORYIKEV2=$(cat $HISTORY/ikev2ney-h 2>/dev/null | sort -r -k2,2 | sed "s/NO VALID/$(echo -e "$rz")NO VALID$(echo -e "$endc")/g" | sed "s/  VALID/$(echo -e "$gz")  VALID$(echo -e "$endc")/g" | fzf --ansi \
+      --header="$FZF_HEADER" \
+      --bind='enter:execute(sudo $(echo {} | cut -d= -f2); echo -e "\033[2;37m[*] \033[0m"; read -n 1 -s)+become(ikev2ney -q manager)' \
+      --bind='n:execute(sudo ikev2ney -q new; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(ikev2ney -q manager)' \
+      --bind='s:execute-silent(sudo ikev2ney -s && sleep 1)+become(ikev2ney -q manager)' \
+      --bind='a:execute-silent(sudo ikev2ney enable && sleep 1)+become(ikev2ney -q manager)' \
+      --bind='d:execute-silent(sudo ikev2ney disable && sleep 1)+become(ikev2ney -q manager)' \
+      --bind='c:execute-silent(sudo ikev2ney clear && sleep 1)+become(ikev2ney -q manager)' \
+      --bind='ctrl-i:execute(sudo ikev2ney -q import; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -t 2 -n 1 -s)+become(ikev2ney -q manager)' \
+      --bind='ctrl-e:execute(sudo ikev2ney -q export; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -t 2 -n 1 -s)+reload(ikev2ney -q manager)' \
+      --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+      --height=40% --info=inline --margin=1 --padding=1)
+    if [ -z "$HISTORYIKEV2" ]; then
+      if ! $QUIET_MODE; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+      fi
+      exit 1
+    fi
+    exit 0
+    ;;
+    new)
+    # Цикл для повторного ввода в случае ошибки
+    while true; do
+        if [ "$LANGUAGE" = "RU" ]; then
+            echo -e [*] ''$zsh'Введите данные IKEv2 VPN в одном из любых форматов:'$endc''
+            echo -e [*] '  IP/Host:логин:пароль'
+            echo -e [*] '  IP/Host логин пароль'
+            echo -e [*] '  IP/Host|логин|пароль'
+            echo -e [*] '  логин:пароль:IP/Host'
+            echo -e [*] '  логин пароль IP/Host'
+            echo -e [*] '  логин|пароль|IP/Host'
+            echo -e [*]
+            read -p "Вставьте или введите данные IKEv2 VPN: " server_info
+        else
+            echo -e [*] ''$zsh'Enter IKEv2 VPN data in any of the following formats:'$endc''
+            echo -e [*] '  IP/Host:login:password'
+            echo -e [*] '  IP/Host login password'
+            echo -e [*] '  IP/Host|login|password'
+            echo -e [*] '  login:password:IP/Host'
+            echo -e [*] '  login password IP/Host'
+            echo -e [*] '  login|password|IP/Host'
+            echo -e [*]
+            read -p "Paste or enter IKEv2 VPN data: " server_info
+        fi
+        
+        # Определяем разделитель и разбиваем строку
+        if [[ "$server_info" == *":"* ]]; then
+            # Разделитель - двоеточие
+            IFS=':' read -r part1 part2 part3 <<< "$server_info"
+        elif [[ "$server_info" == *"|"* ]]; then
+            # Разделитель - вертикальная черта
+            IFS='|' read -r part1 part2 part3 <<< "$server_info"
+        else
+            # Предполагаем разделитель - пробел
+            read -r part1 part2 part3 <<< "$server_info"
+        fi
+        
+        # Определяем, что из частей является IP/Host и что логином/паролем
+        SERVERIP=""
+        SERVERLOGIN=""
+        SERVERPASS=""
+        
+        if is_ip_or_host "$part1"; then
+            # Формат: IP/Host логин пароль
+            SERVERIP=$part1
+            SERVERLOGIN=$part2
+            SERVERPASS=$part3
+        elif is_ip_or_host "$part3"; then
+            # Формат: логин пароль IP/Host
+            SERVERLOGIN=$part1
+            SERVERPASS=$part2
+            SERVERIP=$part3
+        else
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось определить IP/Host в введенной строке.${endc}" || echo -e "[*] ${rz}Error: could not determine IP/Host in the input string.${endc}"
+            continue
+        fi
+        if [ -z "$SERVERIP" ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан IP/Host сервера.${endc}" || echo -e "[*] ${rz}Error: server IP/Host not specified.${endc}"
+            continue
+        fi
+        
+        if [ -z "$SERVERLOGIN" ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан логин.${endc}" || echo -e "[*] ${rz}Error: login not specified.${endc}"
+            continue
+        fi
+        
+        if [ -z "$SERVERPASS" ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан пароль.${endc}" || echo -e "[*] ${rz}Error: password not specified.${endc}"
+            continue
+        fi
+        break
+    done
+    
+    # Запускаем подключение с полученными параметрами
+    sudo ikev2ney on "$SERVERIP" "$SERVERLOGIN" "$SERVERPASS"
+    exit $?
+    ;;
+    on|up|start)
+    if [ -z "$4" ] && [ -n "$2" ]; then
+        # Если есть только один аргумент, обрабатываем его как строку с разделителями
+        server_info="$2"
+        # Разбиваем строку на части
+        if [[ "$server_info" == *"|"* ]]; then
+            # Разделитель - вертикальная черта
+            IFS='|' read -r part1 part2 part3 <<< "$server_info"
+        elif [[ "$server_info" == *":"* && "$server_info" != *" "* ]]; then
+            # Разделитель - двоеточие
+            IFS=':' read -r part1 part2 part3 <<< "$server_info"
+        else
+            # Предполагаем разделитель - пробел
+            read -r part1 part2 part3 <<< "$server_info"
+        fi
+
+        # Определяем, что из частей является IP/Host и что логином/паролем
+        if is_ip_or_host "$part1"; then
+            # Формат: IP/Host логин пароль
+            SERVERIP=$part1
+            SERVERLOGIN=$part2
+            SERVERPASS=$part3
+        elif is_ip_or_host "$part3"; then
+            # Формат: логин пароль IP/Host
+            SERVERLOGIN=$part1
+            SERVERPASS=$part2
+            SERVERIP=$part3
+        else
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось определить IP/Host в введенной строке.${endc}" || echo -e "[*] ${rz}Error: failed to determine IP/Host in the input string.${endc}"
+            echo =================================
+            exit 1
+        fi
+    else
+        # Старый формат с тремя аргументами
+        # Проверяем, какой из аргументов является IP/Host
+        if is_ip_or_host "$4"; then
+            SERVERIP="$4"
+            SERVERLOGIN="$2"
+            SERVERPASS="$3"
+        elif is_ip_or_host "$2"; then
+            SERVERIP="$2"
+            SERVERLOGIN="$3"
+            SERVERPASS="$4"
+        else
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось определить IP/Host среди аргументов.${endc}" || echo -e "[*] ${rz}Error: failed to determine IP/Host among arguments.${endc}"
+            echo =================================
+            exit 1
+        fi
+    fi
+
+    # Проверка наличия необходимых параметров
+    if [ -z "$SERVERIP" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан IP/Host сервера.${endc}" || echo -e "[*] ${rz}Error: server IP/Host not specified.${endc}"
+      echo =================================
+      exit 1
+    fi
+    if [ -z "$SERVERLOGIN" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан логин.${endc}" || echo -e "[*] ${rz}Error: login not specified.${endc}"
+      echo =================================
+      exit 1
+    fi
+    if [ -z "$SERVERPASS" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не указан пароль.${endc}" || echo -e "[*] ${rz}Error: password not specified.${endc}"
+      echo =================================
+      exit 1
+    fi
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сервер IP/Host: ${zsh}$SERVERIP${endc}" || echo -e "[*] Server IP/Host: ${zsh}$SERVERIP${endc}"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Логин: ${zsh}$SERVERLOGIN${endc}" || echo -e "[*] Login: ${zsh}$SERVERLOGIN${endc}"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль: ${zsh}$SERVERPASS${endc}" || echo -e "[*] Password: ${zsh}$SERVERPASS${endc}"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Формат конфигурации: ${zsh}swanctl.conf (современный)${endc}" || echo -e "[*] Config format: ${zsh}swanctl.conf (modern)${endc}"
+    echo [*]
+    sudo ifconfig vti0 1>/dev/null 2>&1
+    if [ "$?" != "1" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Рестарт...${endc}" || echo -e "[*] ${yz}Restart...${endc}"
+      stop_ikev2ney
+      sleep 5
+    fi
+    sudo ifconfig | egrep -o "ppp0" 1>/dev/null 2>&1
+    if [ "$?" != "1" ]; then
+      DELIP=$(route -n | grep UGH | awk '{print $1}') 1>/dev/null 2>&1
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Рестарт...${endc}" || echo -e "[*] ${yz}Restart...${endc}"
+      sudo poff pptpney 1>/dev/null 2>&1
+      sudo poff sstpney 1>/dev/null 2>&1
+      sudo /usr/sbin/ipsec stop 1>/dev/null 2>&1
+      sudo /etc/init.d/xl2tpd stop 1>/dev/null 2>&1
+      sudo sh -c "echo 'd l2tpney' > /var/run/xl2tpd/l2tp-control" 1>/dev/null 2>&1
+      sudo ipsec down l2tpney 1>/dev/null 2>&1
+      sudo route delete $DELIP 1>/dev/null 2>&1
+      sleep 1
+      sudo killall -9 pppd 1>/dev/null 2>&1
+      sleep 5
+    fi
+    [ "$LANGUAGE" = "RU" ] && echo -n "[*] Подключаемся к серверу по IKEv2 VPN....." || echo -n "[*] Connecting to the server by IKEv2 VPN....."
+    
+    # Если SERVERIP - это доменное имя, преобразуем его в IP
+    if [[ ! $SERVERIP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        SERVER_IP_RESOLVED=$(host $SERVERIP | grep 'has address' | head -1 | awk '{print $4}')
+        if [ -n "$SERVER_IP_RESOLVED" ]; then
+            SERVERIP_ORIG=$SERVERIP
+            SERVERIP=$SERVER_IP_RESOLVED
+        fi
+    fi
+    
+    # Создаем директории для swanctl если их нет
+    sudo mkdir -p /etc/swanctl/conf.d
+    sudo mkdir -p /etc/swanctl/x509
+    sudo mkdir -p /etc/swanctl/private
+    
+    create_swanctl_config "$SERVERIP" "$SERVERLOGIN" "$SERVERPASS"
+    
+    # Настройка сертификатов для swanctl
+    if [ ! -L "/etc/swanctl/x509ca" ]; then
+        sudo ln -sf /etc/ssl/certs /etc/swanctl/x509ca 2>/dev/null
+    fi
+    
+    echo
+    # Запускаем подключение
+    start_ikev2ney
+    sleep 1
+    result=$(ifconfig | grep vti0 | awk '{print $1}')
+    if ! test -z "$result" ; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Подключен к серверу по IKEv2 VPN." || echo -e "[*] ${gz}Done:${endc} Connected to the server by IKEv2 VPN."
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Время: `date +%T` `date +%d-%m-%Y`" || echo -e "[*] Time: `date +%T` `date +%d-%m-%Y`"
+      echo -e "`date +%T`  `date +%d-%m-%Y`  VALID = ikev2ney $LASTCMD" >> $HISTORY/ikev2ney-h
+      #echo [*] 'Остановить IKEv2 VPN-client - sudo ikev2ney -s'
+      echo =================================
+    fi
+    if test -z "$result" ; then
+      stop_ikev2ney
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: Не удалось подключиться к серверу по IKEv2 VPN.${endc}" || echo -e "[*] ${rz}Information: Failed to connect to the server by IKEv2 VPN.${endc}"
+      echo -e "`date +%T`  `date +%d-%m-%Y`  NO VALID = ikev2ney $LASTCMD" >> $HISTORY/ikev2ney-h
+      echo =================================
+      exit 1
+    fi
+    shift
+    exit 1 ;;
+    -s|stop|down)
+    result=$(ifconfig | grep vti0 | wc -l)
+    if [ $result -eq 1 ]; then
+      stop_ikev2ney
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} IKEv2 VPN-клиент отсоединен." || echo -e "[*] ${gz}Done:${endc} IKEv2 VPN-client disconnected."
+      echo =================================
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} IKEv2 VPN-клиент был отсоединен." || echo -e "[*] ${yz}Information:${endc} IKEv2 VPN-client disconnected."
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    enable)
+    sudo systemctl enable ikev2ney.service 1>/dev/null 2>&1
+    sudo systemctl enable strongswan 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Автоподключение IKEv2 VPN: ${zsh}включено${endc}" || echo -e "[*] ${gz}Done:${endc} Autostart IKEv2 VPN: ${zsh}enable${endc}"
+    echo =================================
+    shift
+    exit 1 ;;
+    disable)
+    sudo systemctl disable ikev2ney.service 1>/dev/null 2>&1
+    sudo systemctl disable strongswan 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Автоподключение IKEv2 VPN: ${zsh}отключено${endc}" || echo -e "[*] ${gz}Done:${endc} Autostart IKEv2 VPN: ${zsh}disable${endc}"
+    echo =================================
+    shift
+    exit 1 ;;
+    clear)
+    # Очищаем конфигурацию swanctl.conf
+    sudo rm -f /etc/swanctl/swanctl.conf 1>/dev/null 2>&1
+    sudo sh -c "echo > $HISTORY/ikev2ney-h 1>/dev/null 2>&1"
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} История очищена." || echo -e "[*] ${gz}Done:${endc} History cleared."
+    echo =================================
+    shift
+    exit 1
+    ;;
+    import)
+    if [ ! "$(ls -A $HOMENEY/ikev2-history 2>/dev/null)" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось найти файл ikev2-history.${endc}" || echo -e "[*] ${rz}Error: failed to find ikev2-history file.${endc}"
+      echo =================================
+      exit 1
+    fi
+    sudo cp $HOMENEY/ikev2-history $HISTORY/ikev2ney-h 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Импорт выполнен." || echo -e "[*] ${gz}Done:${endc} Import completed."
+    echo =================================
+    shift
+    exit 1 ;;
+    export)
+    sudo cp $HISTORY/ikev2ney-h $HOMENEY/ikev2-history 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Экспорт выполнен. Файл ikev2-history в домашней папке." || echo -e "[*] ${gz}Done:${endc} Export completed. File ikev2-history in home directory."
+    echo =================================
+    shift
+    exit 1 ;;
+    *)
+    if [ "$LANGUAGE" = "RU" ]; then
+cat << EOF
+[*] Использование: sudo ikev2ney [опции]
+[*] Опции:
+[*]  manager                          - менеджер IKEv2 VPN-client
+[*]  up [IP/Host] [логин] [пароль]    - подключить
+[*]  -s, stop, down                   - остановить
+[*]  enable                           - включить автоподключение при вкл малины
+[*]  disable                          - выключить автоподключение при вкл малины
+[*]  clear                            - очистить историю подключений
+[*]  import                           - импортировать историю подключений
+[*]  export                           - экспортировать историю подключений
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)
+EOF
+    else
+cat << EOF
+[*] Usage: sudo ikev2ney [options]
+[*] Options:
+[*]  manager                          - IKEv2 VPN-client manager
+[*]  up [IP/Host] [LOGIN] [PASSWORD]  - connect
+[*]  -s, stop, down                   - stop
+[*]  enable                           - enable autostart on boot
+[*]  disable                          - disable autostart on boot
+[*]  clear                            - clear history of connections
+[*]  import                           - import history of connections
+[*]  export                           - export history of connections
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+EOF
+    fi
+    echo =================================
+    shift
+    exit 1 ;;
+esac

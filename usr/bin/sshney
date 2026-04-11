@@ -1,0 +1,453 @@
+#!/bin/bash
+export LASTCMD=$@
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e ========='|'$bz' SSHNey 7.1 '$endc'|'=========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+HELP="[*] Использование: sudo sshney [опции]
+[*] Опции:
+[*]  manager              - менеджер SSH-клиент
+[*]  [логин]@[IP]         - подключить SSH-клиент (порт: 22 по умолчанию)
+[*]  [логин]@[IP]:[порт]  - подключить SSH-клиент (где [порт] - другой порт)
+[*]  -d [IP-DNS]          - изменить DNS (ставить после sshney)
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)
+================================="
+else
+HELP="[*] Usage: sudo sshney [options]
+[*] Options:
+[*]  manager              - SSH-client manager
+[*]  [login]@[IP]         - connect SSH-client (port: 22 by default)
+[*]  [login]@[IP]:[port]  - connect SSH-client (where [port] - another port)
+[*]  -d [IP-DNS]          - change DNS (set after sshney)
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+================================="
+fi
+[ "$#" = "0" ] &&  echo "$HELP" && exit 1
+ROUTEAP=br0
+LSERVER=$(ifconfig $ROUTEAP | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+SSHSERPORT=$(sudo cat /etc/ssh/sshd_config | grep "Port " | awk '{print $2}' | head -n1)
+IPTNAME=SSHNEY
+IPINET=0.0.0.0
+DNS=208.67.220.220
+LPDNS=533
+LOCALDNS=$LSERVER:$LPDNS/tcp
+HISTORY=/etc/history-vpn-proxy
+while [ "$#" != '0' ]; do
+  case "$1" in
+    manager)
+        # Проверяем подключение любого SSH клиента
+        if test -f "/tmp/sshney/sshney-online" 2>/dev/null || test -f "/tmp/sshdney/sshdney-online" 2>/dev/null; then
+          SSHNEY_CONNECTED="connected"
+        else
+          SSHNEY_CONNECTED="not connected"
+        fi
+        
+        # Проверяем наличие TUN интерфейса
+        TUN_STATUS=""
+        if sudo ip tuntap 2>/dev/null | grep -q "ssh0"; then
+          TUN_STATUS="(TUN)"
+        fi
+        
+        # Получаем информацию о sshdney и sshney
+        SSHDNEY_INFO=""
+        if [ -f "/tmp/sshdney/sshdney-online" ] && [ -f "/tmp/sshdney/sshdney-hostport" ]; then
+          SSHDNEY_INFO=$(sudo grep "^sshd" /tmp/sshdney/sshdney-hostport | cut -d" " -f2 2>/dev/null || echo "N/A")
+        fi
+        
+        SSHNEY_INFO=""
+        if [ -f "/tmp/sshney/sshney-hostport" ]; then
+          SSHNEY_INFO=$(sudo grep "^ssh" /tmp/sshney/sshney-hostport | cut -d" " -f2 2>/dev/null || echo "N/A")
+        fi
+        
+        # Формируем LAST_SERVERIP для отображения
+        if [ -n "$TUN_STATUS" ] && [ -n "$SSHDNEY_INFO" ]; then
+          # Если есть TUN и sshdney, показываем оба
+          LAST_SERVERIP="$SSHDNEY_INFO $TUN_STATUS"
+          if [ -n "$SSHNEY_INFO" ]; then
+            LAST_SERVERIP="$LAST_SERVERIP ← $SSHNEY_INFO"
+          fi
+        else
+          # Иначе показываем тот, который есть
+          if [ -n "$SSHNEY_INFO" ]; then
+            LAST_SERVERIP="$SSHNEY_INFO"
+          elif [ -n "$SSHDNEY_INFO" ]; then
+            LAST_SERVERIP="$SSHDNEY_INFO"
+          else
+            LAST_SERVERIP="N/A"
+          fi
+        fi
+        
+        # Для обратной совместимости
+        CHECK_TUN=$TUN_STATUS
+
+        if [ "$LANGUAGE" = "RU" ]; then
+          FZF_HEADER="
+[*] SSH-клиент: $SSHNEY_CONNECTED - $LAST_SERVERIP
+
+enter: подключить
+n: подключить новый
+c: очистить историю
+ctrl-i: импортировать историю
+ctrl-e: экспортировать историю
+ESC: выход"
+          EXIT_MSG="Для выхода нажмите любую клавишу"
+          BORDER_LABEL="| Менеджер SSH-клиент |"
+        else
+          FZF_HEADER="
+[*] SSH-client: $SSHNEY_CONNECTED - $LAST_SERVERIP
+
+enter: re-connect
+n: connect new
+c: clear history
+ctrl-i: import history
+ctrl-e: export history
+ESC: exit"
+          EXIT_MSG="Press any key to exit"
+          BORDER_LABEL="| SSH-client manager |"
+        fi
+        HISTORYSSH=$(cat $HISTORY/sshney-h 2>/dev/null | sort -r -k2,2 | sed "s/NO ASN/$(echo -e "$yz")NO ASN$(echo -e "$endc")/g" | sed "s/NO AUTO DNS/$(echo -e "$yz")NO AUTO DNS$(echo -e "$endc")/g" | sed "s/NO VALID/$(echo -e "$rz")NO VALID$(echo -e "$endc")/g" | sed "s/  VALID/$(echo -e "$gz")  VALID$(echo -e "$endc")/g" | fzf --ansi \
+          --header="$FZF_HEADER" \
+          --bind='enter:execute(sudo $(echo {} | grep -o "ssh[d]*ney.*"); echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(sshney -q manager)' \
+          --bind='n:execute(sudo sshney -q new; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -n 1 -s)+become(sshney -q manager)' \
+          --bind='c:execute-silent(sudo sshney clear && sleep 1)+become(sshney -q manager)' \
+          --bind='ctrl-i:execute(sudo sshney -q import; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -t 2 -n 1 -s)+become(sshney -q manager)' \
+          --bind='ctrl-e:execute(sudo sshney -q export; echo -e "\033[2;37m[*] '"$EXIT_MSG"'\033[0m"; read -t 2 -n 1 -s)+reload(sshney -q manager)' \
+          --layout=default --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+          --height=40% --info=inline --margin=1 --padding=1)
+        if [ -z "$HISTORYSSH" ]; then
+          if ! $QUIET_MODE; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+            echo =================================
+          fi
+          exit 1
+        fi
+        shift
+        exit 1 ;;
+    -v) VERBOSE=1 ; shift ;;
+    -d) ON=1
+        DNS="$2"
+        shift ;;
+   new)
+        # Интерактивный режим, если нет параметров
+        if [ -z "$2" ]; then
+            echo -e [*] ''$zsh'Введите данные SSH в формате:'$endc''
+            echo -e [*] '  [login]@[IP]'
+            echo -e [*] '  [login]@[IP]:[port]'
+            echo -e [*]
+            read -p "Вставьте или введите данные SSH: " ssh_info
+            
+            if [ -z "$ssh_info" ]; then
+                [ "$LANGUAGE" = "RU" ] && echo -e "[*] Данные не введены. Выход." || echo -e "[*] No data entered. Exit."
+                echo =================================
+                exit 1
+            fi
+        else
+            # Используем переданные параметры
+            ssh_info="$2"
+        fi
+        
+        # Парсим формат [login]@[IP]:[port] или [login]@[IP]
+        if ! [[ "$ssh_info" =~ @ ]]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] Неверный формат. Правильный формат: [login]@[IP] или [login]@[IP]:[port]" || echo -e "[*] Invalid format. Correct format: [login]@[IP] or [login]@[IP]:[port]"
+            echo =================================
+            exit 1
+        fi
+        
+        # Разбираем формат на компоненты
+        SSH_USER="${ssh_info%%@*}"
+        SERVER_PART="${ssh_info#*@}"
+        
+        # Проверяем, есть ли порт
+        if [[ "$SERVER_PART" =~ : ]]; then
+            SERVER_IP="${SERVER_PART%:*}"
+            SSH_PORT="${SERVER_PART#*:}"
+        else
+            SERVER_IP="$SERVER_PART"
+            SSH_PORT="22"  # По умолчанию
+        fi
+        
+        # Выводим информацию для подтверждения
+        echo -e [*] 'User: '$zsh''$SSH_USER''$endc''
+        echo -e [*] 'Server IP: '$zsh''$SERVER_IP''$endc''
+        echo -e [*] 'Server Port: '$zsh''$SSH_PORT''$endc''
+        
+        # Интерактивный выбор режима подключения (sshney или sshdney)
+        echo -e [*] ''$zsh'Режим подключения:'$endc''
+        echo -e [*] '1) Только TCP (DNS over TCP) (sshney)'
+        echo -e [*] '2) TCP и UDP (TUN с DNS, WebRTC) (sshdney)'
+        
+        while true; do
+            read -p "Выберите режим (1-2): " connection_mode
+            case $connection_mode in
+                ""|1)
+                    USE_TUN="false"
+                    echo -e [*] ''$yz'Выбран обычный режим подключения (sshney)'$endc''
+                    break
+                    ;;
+                2)
+                    USE_TUN="true"
+                    echo -e [*] ''$gz'Выбран режим подключения с TUN и поддержкой UDP (sshdney)'$endc''
+                    break
+                    ;;
+                *)
+                    echo -e [*] ''$rz'Неверный выбор. Пожалуйста, выберите 1 или 2.'$endc''
+                    ;;
+            esac
+        done
+        
+        # DNS опции - только для обычного режима sshney
+        manual_dns=""
+        if [ "$USE_TUN" != "true" ]; then
+            echo -e [*] ''$zsh'Выберите DNS опцию:'$endc''
+            echo -e [*] '1) DNS: 208.67.220.220 (по умолчанию)'
+            echo -e [*] '2) Ручной DNS'
+            
+            while true; do
+                read -p "Выберите опцию (1-2, по умолчанию 1): " dns_option
+                case $dns_option in
+                    ""|1)
+                        echo -e [*] ''$yz'DNS не будет изменен'$endc''
+                        break
+                        ;;
+                    2)
+                        read -p "Введите DNS: " manual_dns
+                        if [ -n "$manual_dns" ]; then
+                            echo -e [*] ''$gz'Будет использован пользовательский DNS: '$manual_dns''$endc''
+                            break
+                        else
+                            echo -e [*] ''$rz'DNS не указан. Пожалуйста, введите корректный IP-адрес.'$endc''
+                        fi
+                        ;;
+                    *)
+                        echo -e [*] ''$rz'Неверный выбор. Пожалуйста, выберите 1 или 2.'$endc''
+                        ;;
+                esac
+            done
+        fi
+        
+        # Запускаем соответствующую команду
+        if [ "$USE_TUN" = "true" ]; then
+            # Используем sshdney для TUN и поддержки UDP
+            command_to_run="sudo sshdney $SSH_USER@$SERVER_IP:$SSH_PORT"
+        else
+            # Используем обычный sshney
+            # Добавляем параметр DNS, если указан
+            command_to_run="sudo sshney"
+            if [ -n "$manual_dns" ]; then
+                command_to_run="$command_to_run -d $manual_dns"
+            fi
+            command_to_run="$command_to_run $SSH_USER@$SERVER_IP:$SSH_PORT"
+        fi
+        
+        # Выполняем команду
+        eval $command_to_run
+        exit 1 ;;
+    clear)
+        sudo sh -c "echo > $HISTORY/sshney-h 1>/dev/null 2>&1"
+        sudo rm -rf /tmp/sshney 1>/dev/null 2>&1
+        sudo rm -rf /tmp/sshdney 1>/dev/null 2>&1
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} История очищена." || echo -e "[*] ${gz}Done:${endc} History cleared."
+        echo =================================
+        shift
+        exit 1 ;;
+     *) SSH_PORT=${1##*:}
+        SSH_USER_SERVER=${1%%:*}
+        [ "$SSH_USER_SERVER" = "$SSH_PORT" ] && SSH_PORT=22
+        shift ;;
+  esac
+done
+SOCKS_PORT=12347
+SSHNEY_PORT=$(expr $SOCKS_PORT + 1)
+TMP=/tmp/${0##*/} ; mkdir -p $TMP
+SSHNEY_LOG=$TMP/${0##*/}.log
+SSHNEY_CONF=$TMP/${0##*/}
+ssh -V 2>&1 | grep -q OpenSSH ||
+{ echo [*] You must install OpenSSH. ; exit 1 ; }
+sudo which iptables 1>/dev/null ||
+{ echo [*] You must install iptables. ; exit 1 ; }
+CMD () {
+[ -n "$VERBOSE" ] && echo "+++ $@"
+"$@"
+}
+ACTIVATE () {
+CMD sudo touch /tmp/sshney/sshney-hostport 1>/dev/null 2>&1
+CMD echo -e "ssh $SSH_USER_SERVER:$SSH_PORT" > /tmp/sshney/sshney-hostport
+CMD ssh -o ConnectTimeout=5 -fN -D $LSERVER:$SOCKS_PORT -p $SSH_PORT $SSH_USER_SERVER || exit $?
+: >$SSHNEY_LOG
+CMD sudo touch /tmp/sshney/sshney-online 1>/dev/null 2>&1
+CMD 3proxy $SSHNEY_CONF 1>/dev/null
+CMD sudo iptables -t nat -N $IPTNAME
+CMD sudo iptables -t nat -A $IPTNAME -p tcp --dport $SSHSERPORT -j REDIRECT --to-ports $SSHSERPORT
+CMD sudo iptables -t nat -A $IPTNAME -p tcp --syn -j REDIRECT --to-ports $SSHNEY_PORT
+CMD sudo iptables -t nat -A $IPTNAME -p udp --dport 53 -j REDIRECT --to-ports $LPDNS
+CMD sudo iptables -t nat -A PREROUTING -i $ROUTEAP -j $IPTNAME
+CMD sudo iptables -t raw -I PREROUTING -p udp -m multiport --dports 3478,19302,19305 -j DROP
+}
+start_iptsecurity() {
+  sudo iptables -I FORWARD -i $ROUTEAP -p udp -j REJECT --reject-with icmp-port-unreachable
+  sudo iptables -I FORWARD -i $ROUTEAP -m conntrack --ctstate INVALID -j DROP
+  sudo iptables -I FORWARD -i $ROUTEAP -m state --state INVALID -j DROP
+  sudo iptables -I FORWARD -i $ROUTEAP -m state --state RELATED,ESTABLISHED -j DROP
+  sudo iptables -I FORWARD -i $ROUTEAP -p tcp --tcp-flags ACK,FIN ACK,FIN -j DROP
+  sudo iptables -I FORWARD -i $ROUTEAP -p tcp --tcp-flags ACK,RST ACK,RST -j DROP
+}
+DEACTIVATE () {
+CMD pkill -f "ssh .*-D $LSERVER:$SOCKS_PORT"
+CMD killall 3proxy
+sudo iptables -t nat -L -n |
+       egrep -q 'REDIRECT .* udp .* dpt:53 .* ports $LPDNS' &&
+CMD sudo iptables -t raw -D PREROUTING -p udp -m multiport --dports 3478,19302,19305 -j DROP
+CMD sudo iptables -t nat -D PREROUTING -i $ROUTEAP -j $IPTNAME
+CMD sudo iptables -t nat -F $IPTNAME
+CMD sudo iptables -t nat -X $IPTNAME
+CMD sudo resolvconf -u 1>/dev/null 2>&1
+}
+stop_iptsecurity() {
+  sudo iptables -D FORWARD -i $ROUTEAP -p udp -j REJECT --reject-with icmp-port-unreachable 1>/dev/null 2>&1
+  sudo iptables -D FORWARD -i $ROUTEAP -m conntrack --ctstate INVALID -j DROP 1>/dev/null 2>&1
+  sudo iptables -D FORWARD -i $ROUTEAP -m state --state INVALID -j DROP 1>/dev/null 2>&1
+  sudo iptables -D FORWARD -i $ROUTEAP -m state --state RELATED,ESTABLISHED -j DROP 1>/dev/null 2>&1
+  sudo iptables -D FORWARD -i $ROUTEAP -p tcp --tcp-flags ACK,FIN ACK,FIN -j DROP 1>/dev/null 2>&1
+  sudo iptables -D FORWARD -i $ROUTEAP -p tcp --tcp-flags ACK,RST ACK,RST -j DROP 1>/dev/null 2>&1
+}
+QUIT () {
+trap - INT TERM
+DEACTIVATE 1>/dev/null 2>&1
+exit 0
+}
+UP () {
+trap QUIT INT TERM
+DEACTIVATE 1>/dev/null 2>&1
+cat > $SSHNEY_CONF <<EOF
+daemon
+internal $LSERVER
+external $IPINET
+nserver $LOCALDNS
+nscache 65535
+timeouts 1 5 30 60 180 1800 15 60
+auth iponly
+dnspr -i$LSERVER -p$LPDNS
+allow *
+parent 1000 socks5 $LSERVER $SOCKS_PORT
+plugin /usr/local/3proxy/libexec/TransparentPlugin.ld.so transparent_plugin
+transparent
+tcppm -i$LSERVER $SSHNEY_PORT 127.0.0.1 11111
+notransparent
+tcppm -i$LSERVER $LPDNS $DNS 53
+#proxy -n -a -p4128
+#socks -n -a -p4130
+EOF
+
+CHECKVPN=$(sudo ifconfig | egrep -o "wg0|wg1|tun0|tun1|tap0|tap1|ppp0|ppp1|vti0|pr0|ss0|ssh0")
+if [ -n "$CHECKVPN" ]; then
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] VPN/TUN: ${gz}ВКЛ${endc}" || echo -e "[*] VPN/TUN: ${gz}YES${endc}"
+  IPINET=$(ifconfig $CHECKVPN | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+else
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] VPN/TUN: ${rz}ВЫКЛ${endc}" || echo -e "[*] VPN/TUN: ${rz}NO${endc}"
+fi
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] Подключаемся к серверу по SSH......" || echo -e "[*] Connecting to the server by SSH......"
+[ -n "$VERBOSE" ] && echo =================================
+ACTIVATE
+[ -n "$ON" ] && echo [*] 'DNS: '$DNS''
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} SSH подключен." || echo -e "[*] ${gz}Done:${endc} SSH connected."
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] Время: `date +%T` `date +%d-%m-%Y`" || echo -e "[*] Time: `date +%T` `date +%d-%m-%Y`"
+echo -e "`date +%T`  `date +%d-%m-%Y`  VALID = sshney $LASTCMD" >> $HISTORY/sshney-h
+start_iptsecurity
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход - Ctrl-C." || echo -e "[*] Exit - Ctrl-C."
+}
+DOWN () {
+trap - 0 INT TERM
+echo
+DEACTIVATE
+stop_iptsecurity
+sudo rm -rf /tmp/${0##*/} 1>/dev/null 2>&1
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} SSH отсоединен." || echo -e "[*] ${gz}Done:${endc} SSH disconnected."
+echo =================================
+exit 0
+}
+UP
+trap DOWN 0 INT TERM
+if [ -n "$VERBOSE" ] ; then
+tail -f $SSHNEY_LOG
+else
+while true ; do sleep 10 ; done
+fi
+exit 0

@@ -1,0 +1,235 @@
+#!/bin/bash
+
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+echo -e ========'|'$bz' ResetNey 2.4 '$endc'|'========
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+# ---| WiFi-AP 1.1 |--- begin
+export GENERATE_NAME_WIFIAP=$( cat /dev/urandom | tr --delete --complement 'a-z0-9' | head --bytes=5 )
+#WIFI-AP
+WIFIAPSSID1=WIFI_WORLD_$GENERATE_NAME_WIFIAP
+WIFIAPPASS1=raspberry505
+#WIFI-AP2
+WIFIAPSSID2=WIFI_AP2_$GENERATE_NAME_WIFIAP
+WIFIAPPASS2=raspberry505
+# ---| WiFi-AP 1.1 |--- end
+
+# ---| LOCALIP_Br0 1.2 |--- begin
+LOCALIPBr0=192.168.44.1
+CHECKIPDEFAULT=$(ifconfig | grep -wo "inet 192.168.44" | awk '{print $2}' | cut -d. -f3)
+if test -n "$CHECKIPDEFAULT" ; then
+  LOCALIPBr0ch3=$(expr $CHECKIPDEFAULT + 11)
+  LOCALIPBr0=192.168.$LOCALIPBr0ch3.1
+fi
+LOCALIPBEZBr0=$(echo $LOCALIPBr0 | cut -d. -f1,2,3)
+#echo [*] 'Local IPv4 WiFi-AP: '$zsh''$LOCALIPBr0''$endc''
+# ---| LOCALIP_Br0 1.2 |--- end
+# ---| LOCALIP_Br1 1.0 |--- begin
+LOCALIPBr1=192.168.60.1
+CHECKIPDEFAULT2=$(ifconfig | grep -wo "inet 192.168.60" | awk '{print $2}' | cut -d. -f3)
+if test -n "$CHECKIPDEFAULT2" ; then
+  LOCALIPBr1ch3=$(expr $CHECKIPDEFAULT2 + 10)
+  LOCALIPBr1=192.168.$LOCALIPBr1ch3.1
+fi
+LOCALIPBEZBr1=$(echo $LOCALIPBr1 | cut -d. -f1,2,3)
+#echo [*] 'Local IPv4 WiFi-AP: '$zsh''$LOCALIPBr1''$endc''
+# ---| LOCALIP_Br1 1.0 |--- end
+
+[ "$LANGUAGE" = "RU" ] && read -p "[*] Сбросить настройки сети? (y/N) " choice
+[ "$LANGUAGE" = "EN" ] && read -p "[*] Reset network settings? (y/N) " choice
+
+case "$choice" in
+    y|Y) echo '[*] Yes, OK!'
+
+sudo rfkill block bluetooth 1>/dev/null 2>&1
+
+sudo nmcli con del LAN-IN 1>/dev/null 2>&1
+sudo nmcli con del LAN-OUT 1>/dev/null 2>&1
+sudo nmcli con del LAN2-IN 1>/dev/null 2>&1
+sudo nmcli con del LAN2-OUT 1>/dev/null 2>&1
+sudo nmcli con del LAN3-IN 1>/dev/null 2>&1
+sudo nmcli con del LAN3-OUT 1>/dev/null 2>&1
+sudo nmcli con del LAN4-IN 1>/dev/null 2>&1
+sudo nmcli con del LAN4-OUT 1>/dev/null 2>&1
+sleep 1
+
+sudo nmcli con del WiFi-AP 1>/dev/null 2>&1
+sudo nmcli con del WiFi-AP2 1>/dev/null 2>&1
+sleep 1
+
+sudo nmcli con del Br0 1>/dev/null 2>&1
+sudo nmcli con del Br1 1>/dev/null 2>&1
+sleep 1
+
+# ---| LAN v2 |--- begin
+sudo nmcli con add con-name LAN-IN ifname eth0 type ethernet 1>/dev/null 2>&1
+sudo nmcli con mod LAN-IN ipv6.method disabled 1>/dev/null 2>&1
+sudo nmcli con add con-name LAN2-IN ifname eth1 type ethernet 1>/dev/null 2>&1
+sudo nmcli con mod LAN2-IN ipv6.method disabled 1>/dev/null 2>&1
+sudo nmcli con add con-name LAN3-IN ifname eth2 type ethernet 1>/dev/null 2>&1
+sudo nmcli con mod LAN3-IN ipv6.method disabled 1>/dev/null 2>&1
+sudo nmcli con add con-name LAN4-IN ifname eth3 type ethernet 1>/dev/null 2>&1
+sudo nmcli con mod LAN4-IN ipv6.method disabled 1>/dev/null 2>&1
+# ---| LAN v2 |--- end
+# ---| Bridge0 v2 |--- begin
+sudo nmcli con add con-name Br0 ifname br0 type bridge ipv4.method shared ipv4.address $LOCALIPBEZBr0.1/24 ipv6.method disabled stp no 1>/dev/null 2>&1
+sudo nmcli con mod Br0 connection.autoconnect yes 1>/dev/null 2>&1
+sudo nmcli con mod Br0 ipv4.never-default no 1>/dev/null 2>&1
+sudo nmcli con mod Br0 ipv4.ignore-auto-dns no 1>/dev/null 2>&1
+sudo nmcli con mod Br0 ipv4.dns-priority 1 1>/dev/null 2>&1
+sudo nmcli con mod Br0 ipv6.method disabled 1>/dev/null 2>&1
+sleep 1
+# ---| Bridge0 v2 |--- end
+# ---| Bridge1 v2 |--- begin
+sudo nmcli con add con-name Br1 ifname br1 type bridge ipv4.method shared ipv4.address $LOCALIPBEZBr1.1/24 ipv6.method disabled stp no 1>/dev/null 2>&1
+sudo nmcli con mod Br1 connection.autoconnect no 1>/dev/null 2>&1
+sudo nmcli con mod Br1 ipv4.never-default no 1>/dev/null 2>&1
+sudo nmcli con mod Br1 ipv4.ignore-auto-dns yes 1>/dev/null 2>&1
+sudo nmcli con mod Br1 ipv4.dns-priority 1 1>/dev/null 2>&1
+sudo nmcli con mod Br1 ipv6.method disabled 1>/dev/null 2>&1
+sudo nmcli con down Br1 1>/dev/null 2>&1
+sleep 1
+# ---| Bridge1 v2 |--- end
+# ---| WiFi-AP v2 |--- begin
+check_wlan1=$(sudo ifconfig | grep wlan1 | wc -l)
+if [ $check_wlan1 -eq 0 ]; then
+  sudo nmcli con add con-name WiFi-AP ifname wlan0 type wifi slave-type bridge master 'Br0' mode ap ssid $WIFIAPSSID1 1>/dev/null 2>&1
+  sudo sed -i /etc/NetworkManager/system-connections/preconfigured.nmconnection -e '/interface-name=/c interface-name=wlan1'
+else
+  sudo nmcli con add con-name WiFi-AP ifname wlan1 type wifi slave-type bridge master 'Br0' mode ap ssid $WIFIAPSSID1 1>/dev/null 2>&1
+  sudo sed -i /etc/NetworkManager/system-connections/preconfigured.nmconnection -e '/interface-name=/c interface-name=wlan1'
+fi
+sudo nmcli con mod WiFi-AP connection.autoconnect yes 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP 802-11-wireless.powersave 2 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP 802-11-wireless.band bg 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP 802-11-wireless.channel 1 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP wifi-sec.key-mgmt wpa-psk 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP wifi-sec.proto rsn 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP wifi-sec.group ccmp 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP wifi-sec.pairwise ccmp 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP wifi-sec.psk "$WIFIAPPASS1" 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP 802-11-wireless-security.wps-method 1 1>/dev/null 2>&1
+# ---| WiFi-AP v2 |--- end
+# ---| WiFi-AP2 v2 |--- begin
+sudo nmcli con add con-name WiFi-AP2 ifname wlan2 type wifi slave-type bridge master 'Br1' mode ap ssid $WIFIAPSSID2 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP2 connection.autoconnect no 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP2 802-11-wireless.powersave 2 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP2 802-11-wireless.band bg 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP2 802-11-wireless.channel 1 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP2 wifi-sec.key-mgmt wpa-psk 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP2 wifi-sec.proto rsn 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP2 wifi-sec.group ccmp 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP2 wifi-sec.pairwise ccmp 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP2 wifi-sec.psk "$WIFIAPPASS2" 1>/dev/null 2>&1
+sudo nmcli con mod WiFi-AP2 802-11-wireless-security.wps-method 1 1>/dev/null 2>&1
+sudo nmcli con down WiFi-AP2 1>/dev/null 2>&1
+# ---| WiFi-AP2 v2 |--- end
+
+sudo iw dev wlan0 set power_save off 1>/dev/null 2>&1
+sudo iw dev wlan1 set power_save off 1>/dev/null 2>&1
+
+systemctl stop chrony 1>/dev/null 2>&1
+cat <<EOF> /etc/chrony/chrony.conf
+pool 0.pool.ntp.org iburst maxsources 1
+pool 1.pool.ntp.org iburst maxsources 1
+pool 2.pool.ntp.org iburst maxsources 2
+pool 3.pool.ntp.org iburst maxsources 4
+keyfile /etc/chrony/chrony.keys
+driftfile /var/lib/chrony/chrony.drift
+logdir /var/log/chrony
+maxupdateskew 100.0
+rtcsync
+makestep 1 3
+local stratum 10
+allow $LOCALIPBEZBr0.0/24
+cmdport 0
+EOF
+
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] Local IPv4 Linux Ney: ${zsh}$LOCALIPBr0${endc}" || echo -e "[*] Local IPv4 Linux Ney: ${zsh}$LOCALIPBr0${endc}"
+#echo [*] 'Local IPv4 WiFi-AP2: '$zsh''$LOCALIPBr1''$endc''
+
+timedatectl set-ntp false 1>/dev/null 2>&1
+timedatectl set-timezone UTC 1>/dev/null 2>&1
+systemctl enable chrony 1>/dev/null 2>&1
+
+sudo sed -i '/dns=/s/^/#/' /etc/NetworkManager/NetworkManager.conf
+sudo sh -c "echo > /etc/resolvconf/resolv.conf.d/head"
+
+#cp /etc/nftables.conf.backup.orig /etc/nftables.conf.backup
+cp /etc/save/iptables.ipv4.orig /etc/iptables.ipv4
+
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Настройки сети успешно сброшены." || echo -e "[*] ${gz}Done:${endc} Network settings reset successfully."
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Перезагрузить систему.${endc}" || echo -e "[*] ${yz}Restart system.${endc}"
+    echo =================================
+    exit 0 ;;
+    *) [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Нет.${endc} Выход." || echo -e "[*] ${yz}No.${endc} Exit." 
+    echo =================================
+    exit 0 ;;
+esac

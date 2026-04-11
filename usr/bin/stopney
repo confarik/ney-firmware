@@ -1,0 +1,162 @@
+#!/bin/bash
+
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e ========='|'$bz' StopNey 1.4 '$endc'|'========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+check_proxyney=$(sudo iptables -t nat -L PREROUTING | egrep -o "PROXYNEY")
+sudo iptables -t nat -L $check_proxyney 1>/dev/null 2>&1
+if [ -n "$check_proxyney" ]; then
+  sudo proxyney -s 1>/dev/null 2>&1
+  echo -e [*] ''$zsh'ProxyNey......'$endc''$rz'STOP!'$endc''
+fi
+
+check_ssney=$(sudo iptables -t nat -L PREROUTING | egrep -o "SSNEY")
+sudo iptables -t nat -L $check_ssney 1>/dev/null 2>&1
+if [ -n "$check_ssney" ]; then
+  sudo ssney -s 1>/dev/null 2>&1
+  echo -e [*] ''$zsh'SSNey.........'$endc''$rz'STOP!'$endc''
+fi
+
+sudo ifconfig | egrep -o "ppp0" 1>/dev/null 2>&1
+if [ "$?" != "1" ]; then
+  DELIP=$(route -n | grep UGH | awk '{print $1}') 1>/dev/null 2>&1
+  sudo poff pptpney 1>/dev/null 2>&1
+  sudo poff sstpney 1>/dev/null 2>&1
+  sudo /usr/sbin/ipsec stop 1>/dev/null 2>&1
+  sudo /etc/init.d/xl2tpd stop 1>/dev/null 2>&1
+  sudo sh -c "echo 'd l2tpney' > /var/run/xl2tpd/l2tp-control" 1>/dev/null 2>&1
+  sudo ipsec down l2tpney 1>/dev/null 2>&1
+  sudo route delete $DELIP 1>/dev/null 2>&1
+  sleep 1
+  sudo killall -9 pppd 1>/dev/null 2>&1
+  echo -e [*] ''$zsh'PPTP/SSTP/L2TP VPN..'$endc''$rz'STOP!'$endc''
+fi
+
+sudo ifconfig tun0 1>/dev/null 2>&1
+if [ "$?" != "1" ]; then
+  sudo ovpnney -s 1>/dev/null 2>&1
+  echo -e [*] ''$zsh'OpenVPN........'$endc''$rz'STOP!'$endc''
+fi
+
+sudo ifconfig tap0 1>/dev/null 2>&1
+if [ "$?" != "1" ]; then
+  sudo ovpnney -s 1>/dev/null 2>&1
+  echo -e [*] ''$zsh'OpenVPN........'$endc''$rz'STOP!'$endc''
+fi
+
+sudo ifconfig vti0 1>/dev/null 2>&1
+if [ "$?" != "1" ]; then
+  sudo ikev2ney -s 1>/dev/null 2>&1
+  echo -e [*] ''$zsh'IKEv2 VPN......'$endc''$rz'STOP!'$endc''
+fi
+
+sudo ifconfig wg0 1>/dev/null 2>&1
+if [ "$?" != "1" ]; then
+  sudo wg-quick down wg0 1>/dev/null 2>&1
+  echo -e [*] ''$zsh'WireGuard......'$endc''$rz'STOP!'$endc''
+fi
+
+constun=$(sudo netstat -tlpn | grep stunnel4)
+if ! test -z "$constun" ; then
+  sudo killall stunnel4 1>/dev/null 2>&1
+  echo -e [*] ''$zsh'Stunnel........'$endc''$rz'STOP!'$endc''
+fi
+
+sudo ifconfig ss0 1>/dev/null 2>&1
+if [ "$?" != "1" ]; then
+  sudo ssdney -s 1>/dev/null 2>&1
+  echo -e [*] ''$zsh'SSDNey........'$endc''$rz'STOP!'$endc''
+fi
+
+sudo ifconfig pr0 1>/dev/null 2>&1
+if [ "$?" != "1" ]; then
+  sudo proxydney -s 1>/dev/null 2>&1
+  echo -e [*] ''$zsh'ProxyDNey.....'$endc''$rz'STOP!'$endc''
+fi
+
+#sudo ifconfig ssh0 1>/dev/null 2>&1
+#if [ "$?" != "1" ]; then
+#  sudo sshdney -s 1>/dev/null 2>&1
+#  echo -e [*] ''$zsh'SSHDNey........'$endc''$rz'STOP!'$endc''
+#fi
+
+[ "$LANGUAGE" = "RU" ] && echo -e "[*] ${zsh}Успешно!${endc}" || echo -e "[*] ${zsh}Done!${endc}"
+if ! $QUIET_MODE; then
+echo =================================
+fi

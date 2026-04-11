@@ -1,0 +1,453 @@
+#!/bin/bash
+export LASTCMD=$@
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @confxwho
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e ========'|'$bz' ProxyDNey 5.1 '$endc'|'=======
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@confxwho${endc}
+[*]          канал: ${yz}@confxwho${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@confxwho${endc}
+[*]          channel: ${yz}@confxwho${endc}"
+fi
+SERIALNEYPI=$(grep -oP 'Serial\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+REVISIONNEYPI=$(grep -oP 'Revision\s*:\s*\K.*' /proc/cpuinfo 2>/dev/null)
+SERIAL_FILE="/etc/security/${SERIALNEYPI}"
+if [[ $SERIALNEYPI != a6bb65ad2ae10c15 ]] || [[ $REVISIONNEYPI != b04171 ]] || \
+   [[ ! -f "$SERIAL_FILE" ]] || [[ "$(cat "$SERIAL_FILE" 2>/dev/null)" != "$SERIALNEYPI" ]]; then
+     echo -e "$CONTACT"
+     echo =================================
+     exit 1
+fi
+
+HISTORY=/etc/history-vpn-proxy
+# Функция для проверки, является ли строка IP-адресом или хостом
+is_ip() {
+    local check_str=$1
+    [[ -z "$check_str" ]] && return 1
+    # Проверка IPv4
+    if [[ $check_str =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; then
+        IFS='.' read -r octet1 octet2 octet3 octet4 <<< "$check_str"
+        if [ "$octet1" -gt 255 ] || [ "$octet2" -gt 255 ] || [ "$octet3" -gt 255 ] || [ "$octet4" -gt 255 ]; then
+            return 1
+        fi
+        return 0
+    fi
+    # Простая проверка IPv6
+    if [[ $check_str =~ ^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$ || \
+          $check_str =~ ^([0-9a-fA-F]{1,4}:){1,7}:$ || \
+          $check_str =~ ^::([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}$ || \
+          $check_str =~ ^[0-9a-fA-F]{1,4}::([0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}$ || \
+          $check_str =~ ^([0-9a-fA-F]{1,4}:){2}:([0-9a-fA-F]{1,4}:){0,4}[0-9a-fA-F]{1,4}$ ]]; then
+        return 0
+    fi
+    # Проверка на доменное имя
+    if [[ $check_str == *"."* && $check_str != *" "* ]]; then
+        return 0
+    fi
+    return 1
+}
+start_tun() {
+  sudo mv /etc/resolv.conf /etc/resolv.conf_save 1>/dev/null 2>&1
+  sudo sh -c "echo nameserver 8.8.8.8 > /etc/resolv.conf" 1>/dev/null 2>&1
+  #sudo ln -sf /run/resolvconf/resolv.conf /etc/resolv.conf 1>/dev/null 2>&1
+  if [ -n "$SERVERLOGIN" ]; then
+    sudo tunproxyney --verbosity off --setup --proxy "socks5://$SERVERLOGIN:$SERVERPASS@$SERVERIP:$SERVERPORT" --dns-addr 1.1.1.1 --dns virtual --tun pr0 &
+  else
+    sudo tunproxyney --verbosity off --setup --proxy "socks5://$SERVERIP:$SERVERPORT" --dns-addr 1.1.1.1 --dns virtual --tun pr0 &
+  fi
+}
+stop_tun() {
+  sudo killall tunproxyney 1>/dev/null 2>&1
+  sleep 2
+  sudo rm -rf /tmp/proxydney 1>/dev/null 2>&1
+  sudo ln -sf /run/resolvconf/resolv.conf /etc/resolv.conf
+}
+usage() {
+  if [ "$LANGUAGE" = "RU" ]; then
+cat << EOF
+[*] Использование: sudo proxydney [опции]
+[*] Опции:
+[*]  [тип] [IP/Host] [порт] [логин] [пароль]  - подключить socks5 (TUN) с аутентификацией;
+[*]        [IP/Host]:[порт] [логин] [пароль]     если без аутентификации, то не указывать [логин] [пароль].
+[*]        [IP/Host]:[порт]:[логин]:[пароль]     [тип] - socks5, socks4, http        
+[*]        [IP/Host]|[порт]|[логин]|[пароль]                                      
+[*]        [логин]:[пароль]:[IP/Host]:[порт]
+[*]        [логин] [пароль] [IP/Host] [порт]
+[*]        [логин]|[пароль]|[IP/Host]|[порт]
+[*]        [логин]:[пароль]@[IP/Host]:[порт]
+[*]        
+[*]  -s, stop                                 - отсоединить
+[*]
+[*] Контакт: телеграм @confxwho (никнейм: Ney)
+=================================
+EOF
+  else
+cat << EOF
+[*] Usage: sudo proxydney [options]
+[*] Options:
+[*]  [TYPE] [IP/Host] [PORT] [LOGIN] [PASSWORD]  - connect to socks5 (TUN) with authentication;
+[*]         [IP/Host]:[PORT] [LOGIN] [PASSWORD]     if without authentication, then do not specify [LOGIN] [PASSWORD].
+[*]         [IP/Host]:[PORT]:[LOGIN]:[PASSWORD]     [TYPE] - socks5, socks4, http
+[*]         [IP/Host]|[PORT]|[LOGIN]|[PASSWORD]
+[*]         [LOGIN]:[PASSWORD]:[IP/Host]:[PORT]
+[*]         [LOGIN] [PASSWORD] [IP/Host] [PORT]
+[*]         [LOGIN]|[PASSWORD]|[IP/Host]|[PORT]
+[*]         [LOGIN]:[PASSWORD]@[IP/Host]:[PORT]
+[*]
+[*]  -s, stop                                    - disconnect
+[*]
+[*] Contact: telegram @confxwho (nickname: Ney)
+=================================
+EOF
+  fi
+}
+[ "$#" = "0" ] && usage && exit 1
+while [ $# -gt 0 ]
+do
+option="$1"
+case $option in
+    socks4|socks5|http) 
+    SERVERTYPE=$option
+    
+    if [ -n "$2" ]; then
+        if [ -n "$3" ]; then
+            server_info="$2 $3"
+            if [ -n "$4" ]; then
+                server_info="$2 $3 $4"
+                if [ -n "$5" ]; then
+                    server_info="$2 $3 $4 $5"
+                fi
+            fi
+        else
+            server_info="$2"
+        fi
+        
+        # Определяем разделитель и разбиваем строку
+        proxy_ip=""
+        proxy_port=""
+        proxy_login=""
+        proxy_password=""
+        
+        # Проверяем на формат логин:пароль@IP/Host:порт
+        if [[ $server_info == *"@"* && $server_info == *":"* ]]; then
+            # Формат username:password@host:port
+            auth_part="${server_info%%@*}"  # Часть до @
+            host_part="${server_info#*@}"   # Часть после @
+            
+            # Разбираем auth_part на логин и пароль
+            proxy_login="${auth_part%:*}"   # Часть до :
+            proxy_password="${auth_part#*:}" # Часть после :
+            
+            # Разбираем host_part на хост и порт
+            proxy_ip="${host_part%:*}"     # Часть до :
+            proxy_port="${host_part#*:}"   # Часть после :
+        # Определяем разделитель по наличию в строке
+        elif [[ $server_info == *":"* ]]; then
+            IFS=':' read -r part1 part2 part3 part4 <<< "$server_info"
+        elif [[ $server_info == *"|"* ]]; then
+            IFS='|' read -r part1 part2 part3 part4 <<< "$server_info"
+        else
+            # Предполагаем разделитель - пробел
+            read -r part1 part2 part3 part4 <<< "$server_info"
+        fi
+        
+        # Определяем, что из частей является IP и портом (для не-@ форматов)
+        if ! [[ $server_info == *"@"* && $server_info == *":"* ]]; then
+            if is_ip "$part1"; then
+                # Формат: IP порт [логин пароль]
+                proxy_ip=$part1
+                proxy_port=$part2
+                proxy_login=$part3
+                proxy_password=$part4
+            elif is_ip "$part3"; then
+                # Формат: логин пароль IP порт
+                proxy_login=$part1
+                proxy_password=$part2
+                proxy_ip=$part3
+                proxy_port=$part4
+            fi
+        fi
+        
+        # Устанавливаем переменные для дальнейшего использования
+        SERVERIP="$proxy_ip"
+        SERVERPORT="$proxy_port"
+        SERVERLOGIN="$proxy_login"
+        SERVERPASS="$proxy_password"
+    else
+        while true; do
+          if [ "$LANGUAGE" = "RU" ]; then
+            # Ввод данных сервера в одной строке
+            echo -e [*] ''$zsh'Введите данные прокси в одном из любых форматов (можно без логина и пароля):'$endc''
+            echo -e [*] '  IP/Host:порт:логин:пароль'
+            echo -e [*] '  IP/Host:порт логин пароль'
+            echo -e [*] '  IP/Host|порт|логин|пароль'
+            echo -e [*] '  логин:пароль:IP/Host:порт'
+            echo -e [*] '  логин пароль IP/Host порт'
+            echo -e [*] '  логин|пароль|IP/Host|порт'
+            echo -e [*] '  логин:пароль@IP/Host:порт'
+            echo -e [*]
+            read -p "Вставьте или введите данные прокси $SERVERTYPE: " server_info
+          else
+            # Ввод данных сервера в одной строке
+            echo -e [*] ''$zsh'Enter proxy data in any of the following formats (can be without login and password):'$endc''
+            echo -e [*] '  IP/Host:port:login:password'
+            echo -e [*] '  IP/Host:port login password'
+            echo -e [*] '  IP/Host|port|login|password'
+            echo -e [*] '  login:password:IP/Host:port'
+            echo -e [*] '  login password IP/Host port'
+            echo -e [*] '  login|password|IP/Host|port'
+            echo -e [*] '  login:password@IP/Host:port'
+            echo -e [*]
+            read -p "Paste or enter $SERVERTYPE proxy data: " server_info
+          fi
+          
+          # Определяем разделитель и разбиваем строку
+          proxy_ip=""
+          proxy_port=""
+          proxy_login=""
+          proxy_password=""
+          
+          # Проверяем на формат логин:пароль@IP/Host:порт
+          if [[ $server_info == *"@"* && $server_info == *":"* ]]; then
+              # Формат username:password@host:port
+              auth_part="${server_info%%@*}"  # Часть до @
+              host_part="${server_info#*@}"   # Часть после @
+              
+              # Разбираем auth_part на логин и пароль
+              proxy_login="${auth_part%:*}"   # Часть до :
+              proxy_password="${auth_part#*:}" # Часть после :
+              
+              # Разбираем host_part на хост и порт
+              proxy_ip="${host_part%:*}"     # Часть до :
+              proxy_port="${host_part#*:}"   # Часть после :
+          # Определяем разделитель по наличию в строке
+          elif [[ $server_info == *":"* ]]; then
+              IFS=':' read -r part1 part2 part3 part4 <<< "$server_info"
+          elif [[ $server_info == *"|"* ]]; then
+              IFS='|' read -r part1 part2 part3 part4 <<< "$server_info"
+          else
+              # Предполагаем разделитель - пробел
+              read -r part1 part2 part3 part4 <<< "$server_info"
+          fi
+          
+          # Определяем, что из частей является IP и портом (для не-@ форматов)
+          if ! [[ $server_info == *"@"* && $server_info == *":"* ]]; then
+              if is_ip "$part1"; then
+                  # Формат: IP порт [логин пароль]
+                  proxy_ip=$part1
+                  proxy_port=$part2
+                  proxy_login=$part3
+                  proxy_password=$part4
+              elif is_ip "$part3"; then
+                  # Формат: логин пароль IP порт
+                  proxy_login=$part1
+                  proxy_password=$part2
+                  proxy_ip=$part3
+                  proxy_port=$part4
+              else
+                  [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: не удалось определить IP-адрес в введенной строке.${endc}" || echo -e "[*] ${rz}Error: could not determine IP address in the input string.${endc}"
+                  continue
+              fi
+          fi
+          
+          # Устанавливаем переменные для дальнейшего использования
+          SERVERIP="$proxy_ip"
+          SERVERPORT="$proxy_port"
+          SERVERLOGIN="$proxy_login"
+          SERVERPASS="$proxy_password"
+          break
+        done
+    fi
+    # Проверка IPv4
+    if [[ $SERVERIP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        IFS='.' read -r octet1 octet2 octet3 octet4 <<< "$SERVERIP"
+        if [ "$octet1" -gt 255 ] || [ "$octet2" -gt 255 ] || [ "$octet3" -gt 255 ] || [ "$octet4" -gt 255 ]; then
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: недопустимый IPv4 адрес: $SERVERIP.${endc}" || echo -e "[*] ${rz}Error: invalid IPv4 address: $SERVERIP.${endc}"
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Значения октетов ($octet1.$octet2.$octet3.$octet4) должны быть в диапазоне от 0 до 255." || echo -e "[*] ${yz}Information:${endc} Octet values ($octet1.$octet2.$octet3.$octet4) must be between 0 and 255."
+            echo =================================
+            exit 1
+        fi
+    fi
+    if is_ip "$SERVERIP"; then
+      if [[ "$SERVERPORT" =~ ^[0-9]+$ ]] && [ "$SERVERPORT" -ge 1 ] && [ "$SERVERPORT" -le 65535 ]; then
+        sudo ip tuntap | egrep -o "wg0|wg1|tun0|tun1|tap0|tap1|ppp0|ppp1|vti0" 1>/dev/null 2>&1
+        if [ "$?" != "1" ]; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация: пожалуйста, сначала отсоединить VPN${endc}" || echo -e "[*] ${yz}Information: please disconnect VPN first${endc}"
+          echo =================================
+          exit 1 ;
+        fi
+        sudo ip tuntap | egrep -o "ss0" 1>/dev/null 2>&1
+        if [ "$?" != "1" ]; then
+          sudo bash -c "sudo ssdney -s" 1>/dev/null 2>&1
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Сейчас SSDNEY отсоединен..." || echo -e "[*] ${yz}Information:${endc} Now disconnecting SSDNEY..."
+          echo [*]
+          sleep 1
+        fi
+        sudo ip tuntap | egrep -o "pr0" 1>/dev/null 2>&1
+        if [ "$?" != "1" ]; then
+          stop_tun
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Рестарт...${endc}" || echo -e "[*] ${yz}Restart...${endc}"
+          echo [*]
+          sleep 1
+        fi
+        checkipt=$(sudo iptables -t nat -L PREROUTING | egrep -o "PROXYNEY|SSNEY")
+        sudo iptables -t nat -L $checkipt 1>/dev/null 2>&1
+        if [ -n "$checkipt" ]; then
+          echo [*]
+          sudo bash -c "sudo proxyney -s" 1>/dev/null 2>&1
+          sudo bash -c "sudo ssney -s" 1>/dev/null 2>&1
+          
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Сейчас $checkipt отсоединен..." || echo -e "[*] ${yz}Information:${endc} Now $checkipt is disconnected..."
+          echo [*]
+        fi
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сервер IP/Host: ${zsh}$SERVERIP${endc}" || echo -e "[*] Server IP/Host: ${zsh}$SERVERIP${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Порт сервера: ${zsh}$SERVERPORT${endc}" || echo -e "[*] Server port: ${zsh}$SERVERPORT${endc}"
+        # Если SERVERIP - это доменное имя, преобразуем его в IP для IPsec
+        if [[ ! $SERVERIP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          SERVER_IP_RESOLVED=$(host $SERVERIP | grep 'has address' | head -1 | awk '{print $4}')
+          if [ -n "$SERVER_IP_RESOLVED" ]; then
+            SERVERIP_ORIG=$SERVERIP
+            SERVERIP=$SERVER_IP_RESOLVED
+          fi
+        fi
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Тип: ${zsh}$SERVERTYPE${endc}" || echo -e "[*] Type: ${zsh}$SERVERTYPE${endc}"
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: Вы ввели неверный порт.${endc}" || echo -e "[*] ${rz}Error: Invalid port number.${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Число должно находиться в диапазоне от 1 до 65535." || echo -e "[*] ${yz}Information:${endc} The number must be between 1 and 65535."
+        echo =================================
+        exit 1;
+      fi
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: Вы ввели неверный IP-адрес или хост.${endc}" || echo -e "[*] ${rz}Error: Invalid IP address or host.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Информация:${endc} Введите корректный IP или хост." || echo -e "[*] ${yz}Information:${endc} Enter a valid IP or host."
+      echo =================================
+      exit 1;
+    fi
+    if [ -n "$SERVERLOGIN" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Логин: ${zsh}$SERVERLOGIN${endc}" || echo -e "[*] Login: ${zsh}$SERVERLOGIN${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль: ${zsh}$SERVERPASS${endc}" || echo -e "[*] Password: ${zsh}$SERVERPASS${endc}"
+      #ASN=$(curl --max-time 7 --socks5 $SERVERIP:$SERVERPORT -U $SERVERLOGIN:$SERVERPASS -s ipinfo.io/ip;echo)
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Логин: ${zsh}N/A${endc}" || echo -e "[*] Login: ${zsh}N/A${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль: ${zsh}N/A${endc}" || echo -e "[*] Password: ${zsh}N/A${endc}"
+      #ASN=$(curl --max-time 7 --socks5 $SERVERIP:$SERVERPORT -s ipinfo.io/ip;echo || )
+    fi
+    echo [*]
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Подключаемся к серверу по прокси ${skyz}(TUN)${endc}..." || echo -e "[*] Connecting to server by proxy ${skyz}(TUN)${endc}..."
+    if [[ "$SERVERTYPE" == "http" ]]; then
+      SERVERTYPE=proxy
+    fi
+    if [ -n "$SERVERLOGIN" ]; then
+      if curl --output /dev/null --silent --max-time 8 --$SERVERTYPE $SERVERIP:$SERVERPORT -U $SERVERLOGIN:$SERVERPASS --head --fail https://1.1.1.1 2>&1 || curl --output /dev/null --silent --max-time 8 --socks5 $SERVERIP:$SERVERPORT -U $SERVERLOGIN:$SERVERPASS --head --fail https://8.8.8.8 2>&1 || curl --output /dev/null --silent --max-time 8 --socks5 $SERVERIP:$SERVERPORT -U $SERVERLOGIN:$SERVERPASS --head --fail https://debian.org 2>&1 ; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Валид.${endc}" || echo -e "[*] ${gz}Valid.${endc}"
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Не валид.${endc}" || echo -e "[*] ${rz}Invalid.${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: не удалось подключиться к серверу по прокси${endc} ${skyz}(TUN)${endc}." || echo -e "[*] ${rz}Information: failed to connect to the server by Proxy${endc} ${skyz}(TUN)${endc}."
+        echo -e "`date +%T`  `date +%d-%m-%Y`  NO VALID = proxydney $LASTCMD" >> $HISTORY/proxyney-h
+        echo =================================
+        exit 1
+      fi
+    else
+      if curl --output /dev/null --silent --max-time 8 --$SERVERTYPE $SERVERIP:$SERVERPORT --head --fail https://1.1.1.1 2>&1 || curl --output /dev/null --silent --max-time 8 --socks5 $SERVERIP:$SERVERPORT --head --fail https://8.8.8.8 2>&1 || curl --output /dev/null --silent --max-time 8 --socks5 $SERVERIP:$SERVERPORT --head --fail https://debian.org 2>&1 ; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Валид.${endc}" || echo -e "[*] ${gz}Valid.${endc}"
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Не валид.${endc}" || echo -e "[*] ${rz}Invalid.${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Информация: не удалось подключиться к серверу по прокси${endc} ${skyz}(TUN)${endc}." || echo -e "[*] ${rz}Information: failed to connect to the server by Proxy${endc} ${skyz}(TUN)${endc}."
+        echo -e "`date +%T`  `date +%d-%m-%Y`  NO VALID = proxydney $LASTCMD" >> $HISTORY/proxyney-h
+        echo =================================
+        exit 1
+      fi
+    fi
+    SERVERTYPE=$option
+
+# dlya infoney
+    TMP=/tmp/proxydney ; mkdir -p $TMP
+    PROXYDNEY_CONF=$TMP/proxydney
+cat > $PROXYDNEY_CONF <<EOF
+parent 1000 $SERVERTYPE $SERVERIP $SERVERPORT
+EOF
+
+    start_tun
+    sudo touch /tmp/proxydney/proxydney-online 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Подключен к серверу по прокси ${skyz}(TUN)${endc}." || echo -e "[*] ${gz}Done:${endc} Connected to the server by Proxy ${skyz}(TUN)${endc}."
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] Время: `date +%T` `date +%d-%m-%Y`" || echo -e "[*] Time: `date +%T` `date +%d-%m-%Y`"
+    echo -e "`date +%T`  `date +%d-%m-%Y`  VALID = proxydney $LASTCMD" >> $HISTORY/proxyney-h
+    #echo [*] 'Отсоединить Proxy - sudo proxydney -s'
+    echo =================================
+    shift 2
+    exit 1
+    ;;
+    -s|stop)
+    stop_tun
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Прокси-клиент ${skyz}(TUN)${endc} отсоединен." || echo -e "[*] ${gz}Done:${endc} Proxy-client ${skyz}(TUN)${endc} disconnected."
+    echo =================================
+    shift
+    exit 1
+    ;;
+    *) usage
+    shift
+    exit 1
+    ;;
+esac
+done
+exit 0;
