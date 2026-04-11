@@ -507,9 +507,15 @@ ESC: exit
       fi
       case "$CHOICE" in             
         *"[1]"*)
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Новый SSID (имя сети): " || echo -n "[*] New SSID (network name): "
+        read -e WIFI_AP
         [ "$LANGUAGE" = "RU" ] && echo -n "[*] Новый пароль (мин. 8 симв.): " || echo -n "[*] New password: "
         read -e PASSWORD
-        wifiney_ap
+        if [ -z "$WIFI_AP" ]; then
+           [ "$LANGUAGE" = "RU" ] && echo -e "[*] Ошибка: SSID не может быть пустым." || echo -e "[*] Error: SSID cannot be empty."
+        else
+           wifiney_ap
+        fi
         ;;
         *"[2]"*)
         [ "$LANGUAGE" = "RU" ] && echo -n "[*] Скрыть сеть? (yes/no): " || echo -n "[*] Hide network? (yes/no): "
@@ -560,10 +566,18 @@ ESC: exit
       fi
       case "$CHOICE" in             
         *"[1]"*) 
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Новый SSID (имя сети): " || echo -n "[*] New SSID (network name): "
+        read -e WIFI_WLAN_NAME_TMP
         [ "$LANGUAGE" = "RU" ] && echo -n "[*] Новый пароль (мин. 8 симв.): " || echo -n "[*] New password: "
         read -e PASSWORD
-        WIFI_AP="$WIFI_AP2"
-        wifiney_ap ;;
+        if [ -z "$WIFI_WLAN_NAME_TMP" ]; then
+           [ "$LANGUAGE" = "RU" ] && echo -e "[*] Ошибка: SSID не может быть пустым." || echo -e "[*] Error: SSID cannot be empty."
+        else
+           WIFI_AP="$WIFI_WLAN_NAME_TMP"
+           WIFI_AP2="$WIFI_WLAN_NAME_TMP"
+           wifiney_ap
+        fi
+        ;;
         *"[2]"*) 
         [ "$LANGUAGE" = "RU" ] && echo -n "[*] Скрыть сеть? (yes/no): " || echo -n "[*] Hide network? (yes/no): "
         read -e WIFI_AP_HIDE
