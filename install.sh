@@ -10,10 +10,10 @@ cd "$(dirname "$0")"
 
 echo "Installing Linux Ney Firmware Dependencies..."
 apt update
-apt install -y fzf NetworkManager openvpn wireguard iptables vnstat resolvconf sudo curl wget jq
+apt install -y fzf network-manager openvpn wireguard iptables vnstat resolvconf sudo curl wget jq
 
 echo "Creating dummy structure for clean OS..."
-mkdir -p /etc/NetworkManager/system-connections/
+mkdir -p /etc/network-manager/system-connections/
 mkdir -p /etc/default
 touch /etc/default/openvpn
 
