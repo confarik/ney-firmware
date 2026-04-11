@@ -404,33 +404,130 @@ ESC: exit
         # Если пользователь не ввел новый SSID, используем текущий
         if [ -z "$WIFI_WLAN_NAME" ]; then
           WIFI_WLAN_NAME="$current_ssid"
-          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сохраняем текущий SSID: ${zsh}$WIFI_WLAN_NAME${endc}" || echo -e "[*] Saving current SSID: ${zsh}$WIFI_WLAN_NAME${endc}"
-        fi
-    
-        # Запрашиваем статус видимости сети
-        echo -e "[*]"
-        [ "$LANGUAGE" = "RU" ] && echo -e "[*]   (y - да, n - нет, пусто - сохранить текущую настройку):" || echo -e "[*]   (y - yes, n - no, empty - save current setting):"
-        [ "$LANGUAGE" = "RU" ] && echo -e -n "[*]{$zsh} Это скрытая сеть? (y/n): ${endc}" || echo -e -n "[*]{$zsh} Is hidden network? (y/n): ${endc}"
-        read -e WIFI_HIDDEN
-        
-        # Определяем статус видимости сети
-        case "$WIFI_HIDDEN" in
-          [yY]|[yY][eE][sS])
-            WIFI_HIDDEN="true"
-            [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выбрано: ${yz}скрытая сеть${endc}" || echo -e "[*] Selected: ${yz}hidden network${endc}"
-            ;;
-          [nN]|[nN][oO])
-            WIFI_HIDDEN="false"
-            [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выбрано: ${gz}видимая сеть${endc}" || echo -e "[*] Selected: ${gz}visible network${endc}"
-            ;;
-          *)
-            # Сохраняем текущий статус или устанавливаем видимую сеть по умолчанию
-            if [ -z "$current_hidden" ]; then
-              WIFI_HIDDEN="false"
-              [ "$LANGUAGE" = "RU" ] &&   echo -e "[*] По умолчанию: ${gz}видимая сеть${endc}" || echo -e "[*] Default: ${gz}visible network${endc}"
-            else
-              WIFI_HIDDEN="$current_hidden"
-              if [ "$WIFI_HIDDEN" = "true" ]; then
-                [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сохраняем текущую настройку: ${yz}скрытая сеть${endc}" || echo -e "[*] Saving current setting: ${yz}hidden network${endc}"
               else
-                [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сохраняе�
+                [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сохраняем текущую настройку: ${gz}видимая сеть${endc}" || echo -e "[*] Saving current setting: ${gz}visible network${endc}"
+              fi
+            fi
+            ;;
+        esac
+        # Placeholder for connection
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Настройка обновлена." || echo -e "[*] Updated."
+        ;;
+      esac
+    done
+    shift
+    exit 1 ;;
+
+    manager-ap)
+    NAME="WiFi-AP"
+    WIFI_AP=$(sudo cat /etc/NetworkManager/system-connections/WiFi-AP.nmconnection 2>/dev/null | grep ^ssid= | cut -d= -f2)
+    while true; do
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать
+ESC: выход
+      Настройка WiFi-AP (192.168.44.1):"
+        BORDER_LABEL="| Менеджер WiFi-AP |"
+        INTERACTIVE=" [1]  Изменить SSID и пароль
+ [2]  Вкл/выкл скрытую сеть
+ [3]  Изменить канал
+ [4]  Вкл WiFi-AP
+ [5]  Выкл WiFi-AP
+ [6]  Сброс DHCP аренды"
+      else
+        FZF_HEADER="
+enter: select
+ESC: exit
+      WiFi-AP setting (192.168.44.1):"
+        BORDER_LABEL="| WiFi-AP manager |"
+        INTERACTIVE=" [1]  Change SSID & Password
+ [2]  Toggle hidden network
+ [3]  Change channel
+ [4]  Enable WiFi-AP
+ [5]  Disable WiFi-AP
+ [6]  Reset DHCP leases"
+      fi
+      
+      CHOICE=$(echo "$INTERACTIVE" | fzf --ansi --pointer=">" --header="$FZF_HEADER" --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$CHOICE" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 0
+      fi
+      case "$CHOICE" in             
+        *"[1]"*)
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Новый пароль (мин. 8 симв.): " || echo -n "[*] New password: "
+        read -e PASSWORD
+        wifiney_ap
+        ;;
+        *"[2]"*)
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Скрыть сеть? (yes/no): " || echo -n "[*] Hide network? (yes/no): "
+        read -e WIFI_AP_HIDE
+        wifiney_aph
+        ;;
+        *"[3]"*) wifiney_ap_ch ;;
+        *"[4]"*) wifiney_ap_on ;;
+        *"[5]"*) wifiney_ap_off ;;
+        *"[6]"*) wifiney_ap_cldhcp ;;
+      esac
+    done
+    shift
+    exit 1 ;;
+
+    manager-ap2)
+    NAME="WiFi-AP2"
+    WIFI_AP2=$(sudo cat /etc/NetworkManager/system-connections/WiFi-AP2.nmconnection 2>/dev/null | grep ^ssid= | cut -d= -f2)
+    while true; do
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать
+ESC: выход
+      Настройка WiFi-AP2 (192.168.55.1):"
+        BORDER_LABEL="| Менеджер WiFi-AP2 |"
+        INTERACTIVE=" [1]  Изменить SSID и пароль
+ [2]  Вкл/выкл скрытую сеть
+ [3]  Изменить канал
+ [4]  Вкл WiFi-AP2
+ [5]  Выкл WiFi-AP2
+ [6]  Сброс DHCP аренды"
+      else
+        FZF_HEADER="
+enter: select
+ESC: exit
+      WiFi-AP2 setting (192.168.55.1):"
+        BORDER_LABEL="| WiFi-AP2 manager |"
+        INTERACTIVE=" [1]  Change SSID & Password
+ [2]  Toggle hidden network
+ [3]  Change channel
+ [4]  Enable WiFi-AP2
+ [5]  Disable WiFi-AP2
+ [6]  Reset DHCP leases"
+      fi
+      CHOICE=$(echo "$INTERACTIVE" | fzf --ansi --pointer=">" --header="$FZF_HEADER" --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$CHOICE" ]; then
+        exit 0
+      fi
+      case "$CHOICE" in             
+        *"[1]"*) 
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Новый пароль (мин. 8 симв.): " || echo -n "[*] New password: "
+        read -e PASSWORD
+        WIFI_AP="$WIFI_AP2"
+        wifiney_ap ;;
+        *"[2]"*) 
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Скрыть сеть? (yes/no): " || echo -n "[*] Hide network? (yes/no): "
+        read -e WIFI_AP_HIDE
+        wifiney_aph ;;
+        *"[3]"*) wifiney_ap_ch ;;
+        *"[4]"*) wifiney_ap_on ;;
+        *"[5]"*) wifiney_ap_off ;;
+        *"[6]"*) wifiney_ap_cldhcp ;;
+      esac
+    done
+    shift
+    exit 1 ;;
+    
+    *)
+        echo "Usage error."
+        exit 1
+        ;;
+esac
