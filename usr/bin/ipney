@@ -574,11 +574,8 @@ ESC: exit"
       fi
       
       # Разрешаем входящие SSH/SFTP-соединения на найденном порту
-      # === NEY ANTI-LOCKOUT SSH PROTECTION ===
-      # Разрешаем входящие соединения на SSH
+      # Разрешаем входящие SSH/SFTP-соединения на найденном порту
       iptables -A INPUT -p tcp --dport $SSH_PORT -j ACCEPT
-      # Разрешаем исходящие ответы от SSH-сервера (оригинальный Марс это забыл!)
-      iptables -A OUTPUT -p tcp --sport $SSH_PORT -m state --state ESTABLISHED -j ACCEPT
       iptables -A OUTPUT -p tcp --dport $SSH_PORT -j ACCEPT
 
       # Специальные правила для разных типов VPN - разрешаем входящие и исходящие соединения
