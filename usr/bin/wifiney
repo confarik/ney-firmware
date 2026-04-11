@@ -305,7 +305,10 @@ ESC: exit"
     # Проверяем, открытая сеть или защищенная
     if [ "$SECURITY_TYPE" = "--" ]; then
       [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Открытая сеть, пароль не требуется${endc}" || echo -e "[*] ${yz}Open network, password not required${endc}"
-      sudo wifiney -q -i "$NAME_WLAN"
+      sudo nmcli con delete WiFi-WLAN 1>/dev/null 2>&1
+      sudo nmcli d wifi connect "$NAME_WLAN" name "WiFi-WLAN"
+      sudo nmcli con mod WiFi-WLAN connection.autoconnect yes 1>/dev/null 2>&1
+      sudo cp /etc/NetworkManager/system-connections/WiFi-WLAN.nmconnection /etc/NetworkManager/system-connections/preconfigured.nmconnection 2>/dev/null
     else
       [ "$LANGUAGE" = "RU" ] && echo -e "[*] Введите пароль для сети ${zsh}$NAME_WLAN${endc}:" || echo -e "[*] Enter password for network ${zsh}$NAME_WLAN${endc}:"
       [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}(минимальная длина пароля - 8 символов)${endc}" || echo -e "[*] ${yz}(Minimum password length - 8 characters)${endc}"
@@ -315,7 +318,10 @@ ESC: exit"
         [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: пароль должен содержать не менее 8 символов.${endc}" || echo -e "[*] ${rz}Error: password must contain at least 8 characters.${endc}"
         exit 1
       fi
-      sudo wifiney -q -i "$NAME_WLAN" "$WIFI_PASS"
+      sudo nmcli con delete WiFi-WLAN 1>/dev/null 2>&1
+      sudo nmcli d wifi connect "$NAME_WLAN" password "$WIFI_PASS" name "WiFi-WLAN"
+      sudo nmcli con mod WiFi-WLAN connection.autoconnect yes 1>/dev/null 2>&1
+      sudo cp /etc/NetworkManager/system-connections/WiFi-WLAN.nmconnection /etc/NetworkManager/system-connections/preconfigured.nmconnection 2>/dev/null
     fi
     if ! $QUIET_MODE; then
       echo =================================
