@@ -1,35 +1,29 @@
 #!/bin/bash
-# Ney Firmware Support Installer
+# Ney Firmware Auto-Installer
 
 if [ "$(id -u)" -ne 0 ]; then
-  echo "Please run as root"
+  echo "[-] Please run as root (use sudo)"
   exit 1
 fi
 
-cd "$(dirname "$0")"
+echo "[*] Updating system sources..."
+apt-get update -y
+apt-get install curl jq -y
 
-echo "Installing Linux Ney Firmware Dependencies..."
-apt update
-apt install -y fzf network-manager openvpn wireguard iptables vnstat resolvconf sudo curl wget jq
+echo "[*] Downloading Ney Firmware DEB package..."
+curl -sLOO https://github.com/confarik/ney-firmware/raw/refs/heads/main/ney-firmware_1.0.deb
 
-echo "Creating dummy structure for clean OS..."
-mkdir -p /etc/network-manager/system-connections/
-mkdir -p /etc/default
-touch /etc/default/openvpn
+echo "[*] Installing Ney Firmware package..."
+dpkg -i ney-firmware_1.0.deb || true
 
-echo "Installing Linux Ney Firmware Scripts..."
-cp -r usr/bin/* /usr/bin/
-chmod +x /usr/bin/*ney*
+echo "[*] Resolving dependencies and drivers (this may take 5-10 minutes)..."
+apt-get --fix-broken install -y
 
-# Setting up global aliases
-cat << 'ALIAS_EOF' > /etc/profile.d/ney_aliases.sh
-alias i='iney'
-alias w='wifiney'
-alias s='ssney'
-alias reset='resetney'
-ALIAS_EOF
-chmod +x /etc/profile.d/ney_aliases.sh
+echo "[*] Initializing Network Interfaces and Bridges..."
+# Using yes to automatically pass 'y' to resetney
+yes y | resetney || true
 
-echo "Installation complete!"
-echo "Commands available: wifiney, ssney, wgney, iney, ipney, resetney"
-echo "Shortcuts: 'i' (Interactive Menu), 'w' (WiFi), 's' (Shadowsocks), 'reset' (Kill-Switch)"
+echo "========================================="
+echo "[+] SUCCESS: Ney Firmware is installed & armed!"
+echo "[+] You can now type 'i' at any time to open the menu."
+echo "========================================="
