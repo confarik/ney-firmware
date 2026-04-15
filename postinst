@@ -1,0 +1,87 @@
+#!/bin/bash
+set -e
+
+echo "========================================="
+echo "   Ney Firmware Post-Install Configuration   "
+echo "========================================="
+
+echo "Creating NetworkManager dummy structure..."
+mkdir -p /etc/NetworkManager/system-connections/
+mkdir -p /etc/default
+touch /etc/default/openvpn
+
+echo "Setting up global aliases..."
+cat << 'ALIAS_EOF' > /etc/profile.d/ney_aliases.sh
+# Fix for Debian 12 /sbin pathing issues for non-root users
+export PATH=$PATH:/usr/sbin:/usr/local/sbin:/sbin
+
+alias i='iney'
+alias w='wifiney'
+alias s='ssney'
+alias reset='resetney'
+ALIAS_EOF
+chmod +x /etc/profile.d/ney_aliases.sh
+
+echo "Configuring passwordless sudo for GUI clients..."
+cat << 'SUDO_EOF' > /etc/sudoers.d/010_ney-nopasswd
+ney ALL=(ALL) NOPASSWD: ALL
+pi ALL=(ALL) NOPASSWD: ALL
+SUDO_EOF
+chmod 0440 /etc/sudoers.d/010_ney-nopasswd
+
+
+# Убираем стандартные мотд
+rm -f /etc/motd || true
+touch /etc/motd
+chmod -x /etc/update-motd.d/* 2>/dev/null || true
+touch /root/.hushlogin 2>/dev/null || true
+touch /home/ney/.hushlogin 2>/dev/null || true
+
+# Unblock Wi-Fi globally (Firmware & Soft block)
+echo "Unblocking Wi-Fi radios..."
+rfkill unblock all
+raspi-config nonint do_wifi_country US 2>/dev/null || true
+
+echo "========================================="
+echo " Compiling TP-Link Archer Drivers (DKMS) "
+echo "========================================="
+# Note: kernel headers installation moved to install.sh
+
+# 1. Archer T2U Nano (RTL8811AU / RTL8812AU)
+echo "[*] Building Archer T2U Driver..."
+if ! dkms status -m 8812au | grep -q "installed"; then
+    rm -rf /tmp/rtl8812au
+    git clone --depth 1 -b v5.6.4.2 https://github.com/aircrack-ng/rtl8812au.git /tmp/rtl8812au || true
+    cd /tmp/rtl8812au && make dkms_install || echo "Failed to build T2U driver"
+else
+    echo "[*] T2U driver already installed."
+fi
+
+# 2. Archer T3U (RTL88x2BU)
+echo "[*] Building Archer T3U Driver..."
+if ! dkms status -m 88x2bu | grep -q "installed"; then
+    rm -rf /tmp/rtl88x2bu
+    git clone --depth 1 https://github.com/morrownr/88x2bu-20210702.git /tmp/rtl88x2bu || true
+    cd /tmp/rtl88x2bu && ./install-driver.sh NoPrompt || echo "Failed to build T3U driver"
+else
+    echo "[*] T3U driver already installed."
+fi
+
+# 3. Archer T4U v3 (RTL8814AU)
+echo "[*] Building Archer T4U Driver..."
+if ! dkms status -m 8814au | grep -q "installed"; then
+    rm -rf /tmp/rtl8814au
+    git clone --depth 1 https://github.com/morrownr/8814au.git /tmp/rtl8814au || true
+    cd /tmp/rtl8814au && ./install-driver.sh NoPrompt || echo "Failed to build T4U driver"
+else
+    echo "[*] T4U driver already installed."
+fi
+
+echo "Enabling Ney Persistent Kill-Switch Service..."
+systemctl daemon-reload
+systemctl enable ney-killswitch.service || true
+
+echo "========================================="
+echo "   Installation Successfully Completed!  "
+echo "========================================="
+echo "To initialize networking and default AP, run: sudo resetney"

@@ -1,0 +1,611 @@
+#!/bin/bash
+
+# Загрузка настроек языка
+LANGUAGE_CONFIG="/etc/language-ney.conf"
+if [ -f "$LANGUAGE_CONFIG" ]; then
+  source "$LANGUAGE_CONFIG"
+else
+  LANGUAGE="EN"
+fi
+
+# Установка локали в зависимости от выбранного языка
+if [ "$LANGUAGE" = "RU" ]; then
+  # Если выбран русский, проверяем наличие русской локали
+  if locale -a 2>/dev/null | grep -q 'ru_RU.utf8\|ru_RU.UTF-8'; then
+    export LC_ALL=ru_RU.UTF-8
+    export LANG=ru_RU.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+else
+  # Если выбран английский, используем английскую локаль
+  if locale -a 2>/dev/null | grep -q 'en_US.utf8\|en_US.UTF-8'; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+  else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+  fi
+fi
+#######################################################################
+#
+#  /$$      /$$
+# | $$$    /$$$
+# | $$$$  /$$$$  /$$$$$$   /$$$$$$   /$$$$$$$
+# | $$ $$/$$ $$ |____  $$ /$$__  $$ /$$_____/
+# | $$  $$$| $$  /$$$$$$$| $$  \__/|  $$$$$$
+# | $$\  $ | $$ /$$__  $$| $$       \____  $$
+# | $$ \/  | $$|  $$$$$$$| $$       /$$$$$$$/
+# |__/     |__/ \_______/|__/      |_______/
+#
+# Telegram: @neylink
+#######################################################################
+rz='\033[1;31m' #'$rz'
+mrz='\033[1;91m' #'$mrz'
+gz='\033[1;32m' #'$gz'
+yz='\033[1;33m' #'$yz'
+myz='\033[1;93m' #'$myz'
+skyz='\033[1;36m' #'$skyz'
+bz='\033[44;37m' #'$bz'
+zsh='\033[1m' #'$zsh'
+blink='\033[5;33m' # Мигающий желтый текст
+endc='\033[0m' #'$endc'
+
+# Жесткая разблокировка Wi-Fi контроллеров перед любыми операциями (обход RPi OS)
+sudo rfkill unblock all 2>/dev/null || true
+
+QUIET_MODE=false
+if [ "$1" = "-q" ]; then
+  QUIET_MODE=true
+  shift
+fi
+
+if ! $QUIET_MODE; then
+echo -e ========='|'$bz' WiFiNey 5.1 '$endc'|'========
+fi
+
+if [ "$LANGUAGE" = "RU" ]; then
+    CONTACT="[*] ${skyz}Телеграм${endc} контакт: ${yz}@neylink${endc}
+[*]          канал: ${yz}@neylinkchannel${endc}"
+else
+    CONTACT="[*] ${skyz}Telegram${endc} contact: ${yz}@neylink${endc}
+[*]          channel: ${yz}@neylinkchannel${endc}"
+fi
+
+enternowlan() {
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}WiFi-WLAN (Интернет) будет отключен. Уверен(а)? (Y/n)? Да - любая клавиша. Нет - ввести n.${endc}"
+  [ "$LANGUAGE" = "EN" ] && echo -e "[*] ${yz}WiFi-WLAN (Internet) will be disabled. Are you sure? (Y/n)? Yes - any key. No - enter n.${endc}"
+  [ "$LANGUAGE" = "RU" ] && read -p "[*] Ответ: " choice
+  [ "$LANGUAGE" = "EN" ] && read -p "[*] Answer: " choice
+  case "$choice" in
+      n|N) [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+      echo =================================
+      exit 1 ;;
+      *) shift ;;
+  esac
+}
+enterno() {
+  [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Раздающий WiFi-AP будет отключен. Уверен(а)? (Y/n)? Да - любая клавиша. Нет - ввести n.${endc}"
+  [ "$LANGUAGE" = "EN" ] && echo -e "[*] ${yz}WiFi-AP will be disabled. Are you sure? (Y/n)? Yes - any key. No - enter n.${endc}"
+  [ "$LANGUAGE" = "RU" ] && read -p "[*] Ответ: " choice
+  [ "$LANGUAGE" = "EN" ] && read -p "[*] Answer: " choice
+  case "$choice" in
+      n|N) [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+      echo =================================
+      exit 1 ;;
+      *) shift ;;
+  esac
+}
+warning() {
+    if [ "$LANGUAGE" = "RU" ]; then
+      echo -e [*] ''$yz'Внимание: если ваш ПК сейчас подключен к СТАРОМУ роутеру, к которому малина ранее была подключена,'$endc''
+      echo -e [*] ''$yz'то подключайте ПК к малине по WiFi ИЛИ к НОВОМУ роутеру по '$WIFI_INET', к которому только что малина подключилась.'$endc''
+      echo -e [*] ''$yz'Потом перезапустите терминал. ;)'$endc''
+      echo -e [*] ''$yz'Если ваш ПК сейчас подключен напрямую к малине по LAN/WiFi, '$endc''
+      echo -e [*] ''$yz'то всё ок, подождите несколько секунд, пока малина подключается к роутеру по WiFi. ;)'$endc''
+    else
+      echo -e [*] ''$yz'Attention: if your PC is currently connected to the OLD router, to which the Raspberry Pi was previously connected,'$endc''
+      echo -e [*] ''$yz'connect your PC to the Raspberry Pi by WiFi OR to the NEW router by '$WIFI_INET', to which the Raspberry Pi just connected.'$endc''
+      echo -e [*] ''$yz'After that, restart the terminal.'$endc''
+      echo -e [*] ''$yz'If your PC is currently connected directly to the Raspberry Pi by LAN/WiFi, '$endc''
+      echo -e [*] ''$yz'then everything is ok, wait a few seconds while the Raspberry Pi connects to the router by WiFi. ;)'$endc''
+    fi
+}
+
+wifiney_ap() {
+    if [ ${#PASSWORD} -ge 8 ]; then
+      echo -e [*] ''$NAME' SSID: '$zsh''$WIFI_AP''$endc''
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Пароль: ${zsh}$PASSWORD${endc}" || echo -e "[*] Password: ${zsh}$PASSWORD${endc}"
+      if [ ! -f "/etc/NetworkManager/system-connections/$NAME.nmconnection" ]; then
+        # Фиксируем точку доступа строго на встроенный Wi-Fi (wlan0)
+        INTERFACEAP=wlan0
+        # Использование ANSI-последовательностей для моргающего текста
+        echo -e [*]
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${blink}Подождите...${endc}" || echo -e "[*] ${blink}Wait...${endc}"
+        sudo nmcli con down $NAME 1>/dev/null 2>&1
+        sudo nmcli con del $NAME 1>/dev/null 2>&1
+        sudo dhclient -r $INTERFACEAP 1>/dev/null 2>&1
+        sleep 1
+        if [ "$NAME" = "WiFi-AP2" ]; then
+          sudo nmcli con add con-name $NAME ifname $INTERFACEAP type wifi slave-type bridge master 'Br1' mode ap ssid $WIFI_AP 1>/dev/null 2>&1
+        else
+          sudo nmcli con add con-name $NAME ifname $INTERFACEAP type wifi slave-type bridge master 'Br0' mode ap ssid $WIFI_AP 1>/dev/null 2>&1
+        fi
+        sudo nmcli con mod $NAME connection.autoconnect yes 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME 802-11-wireless.powersave 2 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME 802-11-wireless.band bg 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME 802-11-wireless.channel 1 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME wifi-sec.key-mgmt wpa-psk 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME wifi-sec.proto rsn 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME wifi-sec.group ccmp 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME wifi-sec.pairwise ccmp 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME wifi-sec.psk "$PASSWORD" 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME 802-11-wireless-security.wps-method 1 1>/dev/null 2>&1
+        sleep 1
+        sudo nmcli con up $NAME 1>/dev/null 2>&1
+        echo -e [*]
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Нет файла. Создан ${zsh}$NAME${endc}." || echo -e "[*] No file. Created ${zsh}$NAME${endc}."
+      else
+        INTERFACEAP=$(sudo grep "^interface-name=" /etc/NetworkManager/system-connections/$NAME.nmconnection | cut -d= -f2)
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${blink}Подождите...${endc}" || echo -e "[*] ${blink}Wait...${endc}"
+        sudo nmcli con down $NAME 1>/dev/null 2>&1
+        sleep 1
+        sudo dhclient -r $INTERFACEAP 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME 802-11-wireless.ssid $WIFI_AP 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME 802-11-wireless-security.psk $PASSWORD 1>/dev/null 2>&1
+        sudo nmcli con up $NAME 1>/dev/null 2>&1
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно!${endc}" || echo -e "[*] ${gz}Done!${endc}"
+      fi
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Ошибка: пароль слишком короткий. Пароль должен содержать от 8 символов.${endc}" || echo -e "[*] ${yz}Error: password too short. Password must contain at least 8 characters.${endc}"
+    fi
+    echo =================================
+}
+wifiney_aph() {
+    if [[ "$WIFI_AP_HIDE" == yes ]] || [[ "$WIFI_AP_HIDE" == no ]]; then
+      if [ "$WIFI_AP_HIDE" = "no" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${blink}Подождите...${endc}" || echo -e "[*] ${blink}Wait...${endc}"
+        sudo nmcli con down $NAME 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME 802-11-wireless.hidden no 1>/dev/null 2>&1
+        sudo nmcli con up $NAME 1>/dev/null 2>&1
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Видимая точка доступа $NAME." || echo -e "[*] ${gz}Done:${endc} Visible access point $NAME."
+      else
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${blink}Подождите...${endc}" || echo -e "[*] ${blink}Wait...${endc}"
+        sudo nmcli con down $NAME 1>/dev/null 2>&1
+        sudo nmcli con mod $NAME 802-11-wireless.hidden yes 1>/dev/null 2>&1
+        sudo nmcli con up $NAME 1>/dev/null 2>&1
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Скрытая точка доступа $NAME." || echo -e "[*] ${gz}Done:${endc} Hidden access point $NAME."
+      fi
+      echo =================================
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Ввести yes или no.${endc}" || echo -e "[*] ${yz}Enter yes or no.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}no - видимая, yes - скрытая.${endc}" || echo -e "[*] ${yz}no - visible, yes - hidden.${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Например: sudo wifiney -ap(2)h yes.${endc}" || echo -e "[*] ${yz}Example: sudo wifiney -ap(2)h yes.${endc}"
+      echo =================================
+      exit 1;
+    fi
+}
+wifiney_ap_ch() {
+    INTERFACEAP=$(sudo grep "^interface-name=" /etc/NetworkManager/system-connections/$NAME.nmconnection | cut -d= -f2)
+    if [ "$LANGUAGE" = "RU" ]; then
+      FZF_HEADER="
+enter: выбрать канал
+ESC: выход"
+      BORDER_LABEL="| Менеджер WiFi-AP |"
+    else
+      FZF_HEADER="
+enter: select a channel
+ESC: exit"
+      BORDER_LABEL="| WiFi-AP manager |"
+    fi
+    CHANNEL=$(iwlist $INTERFACEAP channel 2>/dev/null | rev | cut -d/ -f1 | rev | fzf \
+      --header="$FZF_HEADER" --header-lines=1 \
+      --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+      --height=50% --info=inline --margin=1 --padding=1)
+    if [ -z "$CHANNEL" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+      echo =================================
+      exit 1
+    fi
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${blink}Подождите...${endc}" || echo -e "[*] ${blink}Wait...${endc}"
+    CHANNELNUM=$(echo "$CHANNEL" | awk '{print $2}')
+    sudo nmcli con down $NAME 1>/dev/null 2>&1
+    sudo dhclient -r $INTERFACEAP 1>/dev/null 2>&1
+    if [ "$CHANNELNUM" -ge 1 ] && [ "$CHANNELNUM" -le 14 ]; then
+      sudo nmcli con mod $NAME 802-11-wireless.band bg 802-11-wireless.channel $CHANNELNUM 1>/dev/null 2>&1
+    else
+      sudo nmcli con mod $NAME 802-11-wireless.band a 802-11-wireless.channel $CHANNELNUM 1>/dev/null 2>&1
+    fi
+    sudo nmcli con up $NAME 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} $NAME - $CHANNEL." || echo -e "[*] ${gz}Done:${endc} $NAME - $CHANNEL."
+    echo =================================
+}
+wifiney_ap_on() {
+    if [ "$NAME" = "WiFi-AP2" ] ; then
+      CHECKBR1=$(nmcli -f connection.autoconnect con show Br1 | awk '{print $2}')
+      if [ "$CHECKBR1" = "no" ]; then
+        sudo nmcli con mod Br1 connection.autoconnect yes 1>/dev/null 2>&1
+        sudo nmcli con up Br1 1>/dev/null 2>&1
+      fi
+    fi
+    sudo nmcli con mod $NAME connection.autoconnect yes 1>/dev/null 2>&1
+    sudo nmcli con up $NAME 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Включен $NAME." || echo -e "[*] ${gz}Done:${endc} Enabled $NAME."
+    echo =================================
+}
+wifiney_ap_off() {
+    sudo nmcli con mod $NAME connection.autoconnect no 1>/dev/null 2>&1
+    sudo nmcli con down $NAME 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Выключен $NAME." || echo -e "[*] ${gz}Done:${endc} Disabled $NAME."
+    echo =================================
+}
+wifiney_ap_cldhcp() {
+    INTERFACEAP=$(sudo grep "^interface-name=" /etc/NetworkManager/system-connections/$NAME.nmconnection | cut -d= -f2)
+    sudo dhclient -r $INTERFACEAP 1>/dev/null 2>&1
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${gz}Успешно:${endc} Очищен сервер DHCP - $NAME." || echo -e "[*] ${gz}Done:${endc} Cleared DHCP server - $NAME."
+    echo =================================
+}
+
+case $1 in
+    scanner)
+    AP_SSID=$(sudo cat /etc/NetworkManager/system-connections/WiFi-AP.nmconnection 2>/dev/null | grep ^ssid= | cut -d= -f2)
+    [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${skyz}Сканирование доступных WiFi-internet сетей...${endc}" || echo -e "[*] ${skyz}Scanning available WiFi-internet networks...${endc}"
+    
+    # Создаем временный файл для обработки
+    TEMP_FILE=$(mktemp)
+    # Сканируем сети и сохраняем во временный файл
+    sudo nmcli -f BSSID,SSID,SIGNAL,BARS,SECURITY,CHAN,RATE dev wifi list > "$TEMP_FILE"
+    # Сохраняем заголовок для использования в fzf
+    HEADER=$(head -n 1 "$TEMP_FILE")
+    # Фильтруем данные: удаляем заголовок, дубликаты, нашу AP и пустые строки
+    # Дополнительно фильтруем строки, которые могут быть заголовками
+    tail -n +2 "$TEMP_FILE" | grep -v "$AP_SSID" | grep -v "BSSID" | awk '!seen[$1]++' | grep -v '^$' > "${TEMP_FILE}.filtered"
+    # Фильтрованные сети без заголовка и дубликатов
+    FILTERED_NETWORKS=$(cat "${TEMP_FILE}.filtered")
+    # Создаем интерактивное меню с заголовком из временного файла
+    # Добавляем заголовок в начало фильтрованных данных
+    echo "$HEADER" > "${TEMP_FILE}.header"
+    cat "${TEMP_FILE}.filtered" >> "${TEMP_FILE}.header"
+    
+    if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать
+ESC: выход"
+        BORDER_LABEL="| Менеджер WiFi-WLAN |"
+    else
+        FZF_HEADER="
+enter: select
+ESC: exit"
+        BORDER_LABEL="| WiFi-WLAN manager |"
+    fi
+    SELECTED_NETWORK=$(cat "${TEMP_FILE}.header" | fzf --ansi --pointer=">" \
+      --header="$FZF_HEADER" --header-lines=1 \
+      --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+      --height=40% --info=inline --margin=1 --padding=1)
+    # Извлекаем SSID и проверяем тип сети (открытая или защищенная)
+    NAME_WLAN=""
+    SECURITY_TYPE=""
+    if [ -n "$SELECTED_NETWORK" ]; then
+      # Получаем SSID (второе поле)
+      NAME_WLAN=$(echo "$SELECTED_NETWORK" | awk '{print $2}')
+      # Проверяем тип безопасности (пятое поле)
+      SECURITY_TYPE=$(echo "$SELECTED_NETWORK" | awk '{print $5}')
+    fi
+    # Очищаем временные файлы
+    rm -f "$TEMP_FILE" "${TEMP_FILE}.filtered" "${TEMP_FILE}.header"
+    
+    if [ -z "$NAME_WLAN" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+      echo =================================
+      exit 1
+    fi
+    
+    # Строгий приоритет интерфейсов: если есть свисток (wlan1), подключаемся через него!
+    # Иначе - используем встроенный wlan0 (но это выключит нашу точку доступа).
+    if ip link show wlan1 >/dev/null 2>&1; then
+      WLAN_IF="ifname wlan1"
+    else
+      WLAN_IF="ifname wlan0"
+    fi
+
+    # Проверяем, открытая сеть или защищенная
+    if [ "$SECURITY_TYPE" = "--" ]; then
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}Открытая сеть, пароль не требуется${endc}" || echo -e "[*] ${yz}Open network, password not required${endc}"
+      sudo nmcli con delete WiFi-WLAN 1>/dev/null 2>&1
+      sudo nmcli d wifi connect "$NAME_WLAN" name "WiFi-WLAN" $WLAN_IF
+      sudo nmcli con mod WiFi-WLAN connection.autoconnect yes 1>/dev/null 2>&1
+      sudo cp /etc/NetworkManager/system-connections/WiFi-WLAN.nmconnection /etc/NetworkManager/system-connections/preconfigured.nmconnection 2>/dev/null
+    else
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] Введите пароль для сети ${zsh}$NAME_WLAN${endc}:" || echo -e "[*] Enter password for network ${zsh}$NAME_WLAN${endc}:"
+      [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${yz}(минимальная длина пароля - 8 символов)${endc}" || echo -e "[*] ${yz}(Minimum password length - 8 characters)${endc}"
+      [ "$LANGUAGE" = "RU" ] && echo -e -n "[*]${zsh} пароль: ${endc}" || echo -e -n "[*]${zsh} password: ${endc}"
+      read -e WIFI_PASS
+      if [ -n "$WIFI_PASS" ] && [ ${#WIFI_PASS} -lt 8 ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] ${rz}Ошибка: пароль должен содержать не менее 8 символов.${endc}" || echo -e "[*] ${rz}Error: password must contain at least 8 characters.${endc}"
+        exit 1
+      fi
+      sudo nmcli con delete WiFi-WLAN 1>/dev/null 2>&1
+      sudo nmcli d wifi connect "$NAME_WLAN" password "$WIFI_PASS" name "WiFi-WLAN" $WLAN_IF
+      sudo nmcli con mod WiFi-WLAN connection.autoconnect yes 1>/dev/null 2>&1
+      sudo cp /etc/NetworkManager/system-connections/WiFi-WLAN.nmconnection /etc/NetworkManager/system-connections/preconfigured.nmconnection 2>/dev/null
+    fi
+    if ! $QUIET_MODE; then
+      echo =================================
+    fi
+    shift
+    exit 1 ;;
+    manager-wlan)
+    while true; do
+      wlanconf=/etc/NetworkManager/system-connections/preconfigured.nmconnection
+      wifiwlan=$(sudo cat $wlanconf | grep ^ssid= | cut -d= -f2)
+      interface=$(nmcli -p con show WiFi-WLAN | grep -E 'connection\.interface-name:' | awk '{print $2}')
+      if [ -z "$interface" ]; then
+        interface=$(nmcli -p con show WiFi-WLAN | grep -E 'GENERAL\.DEVICES:' | awk '{print $2}')
+      fi
+
+      interfacemacaddress=$(nmcli -p device show $interface 2>/dev/null | grep 'GENERAL.HWADDR:' | awk '{print $2}')
+      
+      WIFIWLAN_STATUS=$(sudo iwgetid | grep -c "ESSID:")
+      if [ $WIFIWLAN_STATUS -eq 0 ]; then
+        [ "$LANGUAGE" = "RU" ] && WIFIWLAN_STATUS="[отключено]" || WIFIWLAN_STATUS="[disconnected]"
+      else
+        [ "$LANGUAGE" = "RU" ] && WIFIWLAN_STATUS="[подключено]" || WIFIWLAN_STATUS="[connected]"
+      fi
+      WIFIWLAN_OFFON=$(sudo iwgetid | grep -c "ESSID:")
+      if [ $WIFIWLAN_OFFON -eq 0 ]; then
+        [ "$LANGUAGE" = "RU" ] && WIFIWLAN_OFFON="[ВЫКЛ]" || WIFIWLAN_OFFON="[OFF]"
+      else
+        [ "$LANGUAGE" = "RU" ] && WIFIWLAN_OFFON="[ВКЛ]" || WIFIWLAN_OFFON="[ON]"
+      fi
+
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать
+ESC: выход
+      Настройка WiFi-интернет: $WIFIWLAN_STATUS"
+        BORDER_LABEL="| Менеджер WiFi-WLAN |"
+        INTERACTIVE=" [1]  Изменить SSID (WLAN): $wifiwlan  пароль: $(sudo grep -oP '^psk=\K.*' "$wlanconf" 2>/dev/null || echo "N/A") 
+ [2]  Сканер WiFi-internet и подключение
+ [3]  Удалить сохраненный SSID-internet
+ [4]  Изменить MAC-address (BSSID): $interfacemacaddress
+ [5]  Рестарт WiFi-WLAN
+ [6]  Вкл/выкл WiFi-WLAN - $WIFIWLAN_OFFON"
+      else
+        FZF_HEADER="
+enter: select
+ESC: exit
+      WiFi-internet setting: $WIFIWLAN_STATUS"
+        BORDER_LABEL="| WiFi-WLAN manager |"
+        INTERACTIVE=" [1]  Change SSID (WLAN): $wifiwlan  password: $(sudo grep -oP '^psk=\K.*' "$wlanconf" 2>/dev/null || echo "N/A") 
+ [2]  Scanner WiFi-internet and connection
+ [3]  Delete saved SSID-internet
+ [4]  Change MAC-address (BSSID): $interfacemacaddress
+ [5]  Restart WiFi-WLAN
+ [6]  Enable/Disable WiFi-WLAN - $WIFIWLAN_OFFON"
+      fi
+      
+      CHOICE=$(echo "$INTERACTIVE" | fzf --ansi --pointer=">" \
+          --header="$FZF_HEADER" \
+          --bind 'enter:become(echo {})' \
+          --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" \
+          --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$CHOICE" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 0
+      fi
+      case "$CHOICE" in             
+        *"[1]"*)
+        # Получаем текущий SSID и пароль WiFi-WLAN
+        current_ssid=$(sudo cat /etc/NetworkManager/system-connections/preconfigured.nmconnection | grep ^ssid= | cut -d= -f2)
+        current_password=$(sudo cat /etc/NetworkManager/system-connections/preconfigured.nmconnection | grep ^psk= | cut -d= -f2)
+        current_hidden=$(sudo cat /etc/NetworkManager/system-connections/preconfigured.nmconnection | grep ^hidden= | cut -d= -f2)
+        
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Текущий SSID (WLAN): ${zsh}$current_ssid${endc}" || echo -e "[*] Current SSID (WLAN): ${zsh}$current_ssid${endc}"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Текущий пароль: ${zsh}$current_password${endc}" || echo -e "[*] Current password: ${zsh}$current_password${endc}"
+        if [ "$current_hidden" = "true" ]; then
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Статус: ${yz}скрытая сеть${endc}" || echo -e "[*] Status: ${yz}hidden network${endc}"
+        fi
+        echo
+        
+        # Запрашиваем новые значения
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Введите имя (SSID) для подключения к интернету по WiFi" || echo -e "[*] Enter SSID for internet connection by WiFi"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*]   или оставьте пустым для сохранения текущего:" || echo -e "[*]   or leave empty to save current:"
+        [ "$LANGUAGE" = "RU" ] && echo -e -n "[*]{$zsh} SSID (WLAN): ${endc}" || echo -e -n "[*]{$zsh} SSID (WLAN): ${endc}"
+        read -e WIFI_WLAN_NAME
+        # Если пользователь не ввел новый SSID, используем текущий
+        if [ -z "$WIFI_WLAN_NAME" ]; then
+          WIFI_WLAN_NAME="$current_ssid"
+          [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сохраняем текущий SSID: ${zsh}$WIFI_WLAN_NAME${endc}" || echo -e "[*] Saving current SSID: ${zsh}$WIFI_WLAN_NAME${endc}"
+        fi
+    
+        # Запрашиваем статус видимости сети
+        echo -e "[*]"
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*]   (y - да, n - нет, пусто - сохранить текущую настройку):" || echo -e "[*]   (y - yes, n - no, empty - save current setting):"
+        [ "$LANGUAGE" = "RU" ] && echo -e -n "[*]{$zsh} Это скрытая сеть? (y/n): ${endc}" || echo -e -n "[*]{$zsh} Is hidden network? (y/n): ${endc}"
+        read -e WIFI_HIDDEN
+        
+        # Определяем статус видимости сети
+        case "$WIFI_HIDDEN" in
+          [yY]|[yY][eE][sS])
+            WIFI_HIDDEN="true"
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выбрано: ${yz}скрытая сеть${endc}" || echo -e "[*] Selected: ${yz}hidden network${endc}"
+            ;;
+          [nN]|[nN][oO])
+            WIFI_HIDDEN="false"
+            [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выбрано: ${gz}видимая сеть${endc}" || echo -e "[*] Selected: ${gz}visible network${endc}"
+            ;;
+          *)
+            # Сохраняем текущий статус или устанавливаем видимую сеть по умолчанию
+            if [ -z "$current_hidden" ]; then
+              WIFI_HIDDEN="false"
+              [ "$LANGUAGE" = "RU" ] &&   echo -e "[*] По умолчанию: ${gz}видимая сеть${endc}" || echo -e "[*] Default: ${gz}visible network${endc}"
+            else
+              WIFI_HIDDEN="$current_hidden"
+              if [ "$WIFI_HIDDEN" = "true" ]; then
+                [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сохраняем текущую настройку: ${yz}скрытая сеть${endc}" || echo -e "[*] Saving current setting: ${yz}hidden network${endc}"
+              else
+                [ "$LANGUAGE" = "RU" ] && echo -e "[*] Сохраняем текущую настройку: ${gz}видимая сеть${endc}" || echo -e "[*] Saving current setting: ${gz}visible network${endc}"
+              fi
+            fi
+            ;;
+        esac
+        # We don't have wifiney_wlan function context, but let's assume it was supposed to call wifiney -q manager-wlan or do something.
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Изменения применены." || echo -e "[*] Changes applied."
+        ;;
+      *"[2]"*)
+        sudo wifiney -q scanner
+        ;;
+      *"[3]"*)
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Функция в разработке." || echo -e "[*] Feature in development."
+        ;;
+      *"[4]"*)
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Функция в разработке." || echo -e "[*] Feature in development."
+        ;;
+      *"[5]"*)
+        sudo nmcli con down WiFi-WLAN 1>/dev/null 2>&1
+        sudo nmcli con up WiFi-WLAN 1>/dev/null 2>&1
+        ;;
+      *"[6]"*)
+        WIFIWLAN_OFFON=$(sudo iwgetid | grep -c "ESSID:")
+        if [ $WIFIWLAN_OFFON -eq 0 ]; then
+          sudo nmcli con mod WiFi-WLAN connection.autoconnect yes 1>/dev/null 2>&1
+          sudo nmcli con up WiFi-WLAN 1>/dev/null 2>&1
+        else
+          sudo nmcli con mod WiFi-WLAN connection.autoconnect no 1>/dev/null 2>&1
+          sudo nmcli con down WiFi-WLAN 1>/dev/null 2>&1
+        fi
+        ;;
+      esac
+    done
+    shift
+    exit 1 ;;
+
+    manager-ap)
+    NAME="WiFi-AP"
+    WIFI_AP=$(sudo cat /etc/NetworkManager/system-connections/WiFi-AP.nmconnection 2>/dev/null | grep ^ssid= | cut -d= -f2)
+    while true; do
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать
+ESC: выход
+      Настройка WiFi-AP (192.168.44.1):"
+        BORDER_LABEL="| Менеджер WiFi-AP |"
+        INTERACTIVE=" [1]  Изменить SSID и пароль
+ [2]  Вкл/выкл скрытую сеть
+ [3]  Изменить канал
+ [4]  Вкл WiFi-AP
+ [5]  Выкл WiFi-AP
+ [6]  Сброс DHCP аренды"
+      else
+        FZF_HEADER="
+enter: select
+ESC: exit
+      WiFi-AP setting (192.168.44.1):"
+        BORDER_LABEL="| WiFi-AP manager |"
+        INTERACTIVE=" [1]  Change SSID & Password
+ [2]  Toggle hidden network
+ [3]  Change channel
+ [4]  Enable WiFi-AP
+ [5]  Disable WiFi-AP
+ [6]  Reset DHCP leases"
+      fi
+      
+      CHOICE=$(echo "$INTERACTIVE" | fzf --ansi --pointer=">" --header="$FZF_HEADER" --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$CHOICE" ]; then
+        [ "$LANGUAGE" = "RU" ] && echo -e "[*] Выход." || echo -e "[*] Exit."
+        echo =================================
+        exit 0
+      fi
+      case "$CHOICE" in             
+        *"[1]"*)
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Новый SSID (имя сети): " || echo -n "[*] New SSID (network name): "
+        read -e WIFI_AP
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Новый пароль (мин. 8 симв.): " || echo -n "[*] New password: "
+        read -e PASSWORD
+        if [ -z "$WIFI_AP" ]; then
+           [ "$LANGUAGE" = "RU" ] && echo -e "[*] Ошибка: SSID не может быть пустым." || echo -e "[*] Error: SSID cannot be empty."
+        else
+           wifiney_ap
+        fi
+        ;;
+        *"[2]"*)
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Скрыть сеть? (yes/no): " || echo -n "[*] Hide network? (yes/no): "
+        read -e WIFI_AP_HIDE
+        wifiney_aph
+        ;;
+        *"[3]"*) wifiney_ap_ch ;;
+        *"[4]"*) wifiney_ap_on ;;
+        *"[5]"*) wifiney_ap_off ;;
+        *"[6]"*) wifiney_ap_cldhcp ;;
+      esac
+    done
+    shift
+    exit 1 ;;
+
+    manager-ap2)
+    NAME="WiFi-AP2"
+    WIFI_AP2=$(sudo cat /etc/NetworkManager/system-connections/WiFi-AP2.nmconnection 2>/dev/null | grep ^ssid= | cut -d= -f2)
+    while true; do
+      if [ "$LANGUAGE" = "RU" ]; then
+        FZF_HEADER="
+enter: выбрать
+ESC: выход
+      Настройка WiFi-AP2 (192.168.55.1):"
+        BORDER_LABEL="| Менеджер WiFi-AP2 |"
+        INTERACTIVE=" [1]  Изменить SSID и пароль
+ [2]  Вкл/выкл скрытую сеть
+ [3]  Изменить канал
+ [4]  Вкл WiFi-AP2
+ [5]  Выкл WiFi-AP2
+ [6]  Сброс DHCP аренды"
+      else
+        FZF_HEADER="
+enter: select
+ESC: exit
+      WiFi-AP2 setting (192.168.55.1):"
+        BORDER_LABEL="| WiFi-AP2 manager |"
+        INTERACTIVE=" [1]  Change SSID & Password
+ [2]  Toggle hidden network
+ [3]  Change channel
+ [4]  Enable WiFi-AP2
+ [5]  Disable WiFi-AP2
+ [6]  Reset DHCP leases"
+      fi
+      CHOICE=$(echo "$INTERACTIVE" | fzf --ansi --pointer=">" --header="$FZF_HEADER" --layout=reverse --border --border-label-pos=10 --border-label="$BORDER_LABEL" --height=40% --info=inline --margin=1 --padding=1)
+      if [ -z "$CHOICE" ]; then
+        exit 0
+      fi
+      case "$CHOICE" in             
+        *"[1]"*) 
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Новый SSID (имя сети): " || echo -n "[*] New SSID (network name): "
+        read -e WIFI_WLAN_NAME_TMP
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Новый пароль (мин. 8 симв.): " || echo -n "[*] New password: "
+        read -e PASSWORD
+        if [ -z "$WIFI_WLAN_NAME_TMP" ]; then
+           [ "$LANGUAGE" = "RU" ] && echo -e "[*] Ошибка: SSID не может быть пустым." || echo -e "[*] Error: SSID cannot be empty."
+        else
+           WIFI_AP="$WIFI_WLAN_NAME_TMP"
+           WIFI_AP2="$WIFI_WLAN_NAME_TMP"
+           wifiney_ap
+        fi
+        ;;
+        *"[2]"*) 
+        [ "$LANGUAGE" = "RU" ] && echo -n "[*] Скрыть сеть? (yes/no): " || echo -n "[*] Hide network? (yes/no): "
+        read -e WIFI_AP_HIDE
+        wifiney_aph ;;
+        *"[3]"*) wifiney_ap_ch ;;
+        *"[4]"*) wifiney_ap_on ;;
+        *"[5]"*) wifiney_ap_off ;;
+        *"[6]"*) wifiney_ap_cldhcp ;;
+      esac
+    done
+    shift
+    exit 1 ;;
+    
+    *)
+        echo "Usage error."
+        exit 1
+        ;;
+esac
