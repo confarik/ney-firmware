@@ -4,12 +4,6 @@
 if [ "$(id -u)" -ne 0 ]; then
   echo "[-] Please run as root (use sudo)"
   exit 1
-fi
-
-echo "[*] Synchronizing system clock to prevent APT signature errors..."
-# Fallback time sync if NTP is failing (reads standard HTTP Date header)
-date -s "$(wget -qSO- --max-redirect=0 google.com 2>&1 | grep -i Date: | sed 's/^[ \t]*Date:[ \t]*//g')" 2>/dev/null || true
-
 echo "[*] Updating system sources..."
 apt-get update -y
 apt-get install curl jq -y
