@@ -4,6 +4,8 @@
 if [ "$(id -u)" -ne 0 ]; then
   echo "[-] Please run as root (use sudo)"
   exit 1
+fi
+
 echo "[*] Updating system sources..."
 apt-get update -y
 apt-get install curl jq -y
