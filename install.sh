@@ -11,6 +11,9 @@ apt-get update -y
 apt-get install curl jq -y
 
 echo "[*] Downloading Ney Firmware DEB package..."
+# Установка заголовков ядра для успешной сборки DKMS драйверов
+apt-get install -y linux-headers-rpi-v8 linux-headers-$(uname -r) raspberrypi-kernel-headers || true
+
 curl -sLOO https://github.com/confarik/ney-firmware/raw/refs/heads/main/ney-firmware_1.0.deb
 
 echo "[*] Installing Ney Firmware package..."
