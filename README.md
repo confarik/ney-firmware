@@ -9,10 +9,17 @@ Fully optimized and completely decoupled from legacy SHC compile constraints, of
 - `infoney` (TUI Data Dashboard)
 - `ipney` / `macney` (Routing & Subnet rules)
 
-## Installation:
+## Preparation (Crucial for DKMS Drivers):
+On a fresh Raspberry Pi OS image, you MUST update the system kernel headers before installing to ensure the Wi-Fi USB dongle drivers compile successfully.
 ```bash
-sudo chmod +x install.sh
-sudo ./install.sh
+sudo apt-get update && sudo apt-get upgrade -y
+sudo reboot
+```
+
+## Installation:
+After the reboot, reconnect and download the installer:
+```bash
+curl -sL https://raw.githubusercontent.com/confarik/ney-firmware/main/install.sh | sudo bash
 ```
 
 ## Contact
